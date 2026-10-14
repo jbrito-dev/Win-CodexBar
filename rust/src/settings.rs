@@ -417,6 +417,12 @@ pub struct Settings {
     #[serde(default)]
     pub float_bar_show_cost: bool,
 
+    /// When true, each floating-bar provider tile shows its session and
+    /// weekly windows as two mini meters with absolute reset date/times,
+    /// instead of the single selected-metric pill.
+    #[serde(default)]
+    pub float_bar_detailed: bool,
+
     /// Promote the tray icon out of the Windows hidden-icons overflow area.
     /// Only has effect on Windows 11 (build ≥ 22000); silently ignored elsewhere.
     /// Defaults on so upgrades keep the icon pinned to the taskbar notification area.
@@ -737,6 +743,7 @@ impl Default for Settings {
             float_bar_dark_text: false,
             float_bar_show_reset_inline: false,
             float_bar_show_cost: false,
+            float_bar_detailed: false,
             promote_tray_icon: true,
             claude_daily_routines_usage_visible: true,
             claude_allow_reading_claude_code_credentials: false,

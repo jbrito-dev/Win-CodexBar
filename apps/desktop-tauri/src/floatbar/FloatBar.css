@@ -354,3 +354,79 @@ body.floatbar-window #root {
 .floatbar--floating.floatbar--light-bg .floatbar__handle:hover {
   background-color: rgba(20, 22, 26, 0.18);
 }
+
+/* ── Detailed meters (session + weekly lanes per provider) ─────────────
+ * One tile per provider: the brand icon, then a two-row grid where each row
+ * is  label · mini meter · percent · reset date/time.  The rows share
+ * columns through `display: contents`, so the meters and times line up.
+ * Sized so two rows fit inside a standard 48px Windows taskbar at 100%.
+ */
+.floatbar__tile {
+  gap: calc(5px * var(--floatbar-scale, 1));
+  padding: calc(3px * var(--floatbar-scale, 1)) calc(7px * var(--floatbar-scale, 1));
+  border-radius: calc(8px * var(--floatbar-scale, 1));
+  border-color: var(--brand, rgba(255, 255, 255, 0.48));
+}
+.floatbar--floating .floatbar__tile {
+  border-radius: calc(10px * var(--floatbar-scale, 1));
+}
+.floatbar__lanes {
+  display: grid;
+  grid-template-columns: auto calc(34px * var(--floatbar-scale, 1)) auto auto;
+  align-items: center;
+  column-gap: calc(4px * var(--floatbar-scale, 1));
+  row-gap: calc(2px * var(--floatbar-scale, 1));
+  line-height: 1;
+}
+.floatbar__lane {
+  display: contents;
+  --meter-ok: #15803d;
+  --meter-warn: #b45309;
+  --meter-crit: #b91c1c;
+}
+.floatbar__lane-label {
+  font-size: 0.82em;
+  font-weight: 700;
+  opacity: 0.66;
+  text-align: right;
+}
+.floatbar__meter {
+  position: relative;
+  display: block;
+  height: calc(4px * var(--floatbar-scale, 1));
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.floatbar__meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--meter-ok);
+}
+.floatbar__lane--warn .floatbar__meter-fill { background: var(--meter-warn); }
+.floatbar__lane--crit .floatbar__meter-fill { background: var(--meter-crit); }
+.floatbar__lane--warn .floatbar__lane-pct { color: var(--meter-warn); }
+.floatbar__lane--crit .floatbar__lane-pct { color: var(--meter-crit); }
+.floatbar__lane-pct {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  min-width: 3ch;
+}
+.floatbar__lane-reset {
+  font-size: 0.86em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.74;
+  white-space: nowrap;
+}
+/* Dark floating glass: brighter meter tones for contrast. */
+.floatbar--floating:not(.floatbar--light-bg) .floatbar__lane {
+  --meter-ok: #4ade80;
+  --meter-warn: #fbbf24;
+  --meter-crit: #f87171;
+}
+.floatbar--vertical.floatbar--detailed {
+  align-items: stretch;
+}

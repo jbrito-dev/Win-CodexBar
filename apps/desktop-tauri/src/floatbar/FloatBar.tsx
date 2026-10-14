@@ -34,6 +34,14 @@ import type {
   SettingsSnapshot,
 } from "../types/bridge";
 import { FLOAT_BAR_CONFIG_CHANGED_EVENT, resizeFloatBar } from "./api";
+import {
+  clampPercent,
+  detailedLanes,
+  formatResetDateTime,
+  formatResetDateTimeLong,
+  laneTone,
+  resetCountdown,
+} from "./detailedMeters";
 import "./FloatBar.css";
 
 function sameWindow(a: RateWindowSnapshot, b: RateWindowSnapshot): boolean {
@@ -343,6 +351,101 @@ function ProviderPill({
   );
 }
 
+function intlLocale(locale: string): string | undefined {
+  return /^[a-z]{2}-[A-Z]{2}$/.test(locale) ? locale : undefined;
+}
+
+/**
+ * Detailed tile for one provider: up to two mini meters (session and weekly)
+ * with the absolute reset date/time of each. Callers only render it when the
+ * provider has at least one quota lane and no problem state; otherwise the
+ * compact pill (with its warning and informational handling) is used.
+ */
+function DetailedProviderTile({
+  provider,
+  thresholds,
+  showAsUsed,
+  scale,
+  now,
+  usedSuffix,
+  remainingSuffix,
+}: {
+  provider: ProviderUsageSnapshot;
+  thresholds: QuotaWarningSettings;
+  showAsUsed: boolean;
+  scale: number;
+  now: number;
+  usedSuffix: string;
+  remainingSuffix: string;
+}) {
+  const { t } = useLocale();
+  const locale = intlLocale(t("IntlLocale"));
+  const lanes = detailedLanes(provider);
+  const brand = getProviderIcon(provider.providerId).brandColor;
+  const iconSize = Math.round(14 * scale);
+  const nowDate = new Date(now);
+  const suffix = showAsUsed ? usedSuffix : remainingSuffix;
+
+  const rows = lanes.map((lane) => {
+    const used = clampPercent(lane.window.usedPercent);
+    const display = showAsUsed ? used : 100 - used;
+    const tone = laneTone(thresholds, provider.providerId, lane.lane, lane.window);
+    const reset = formatResetDateTime(lane.window.resetsAt, nowDate, locale);
+    const fallbackReset = reset
+      ? null
+      : localizeProviderText(resetDescriptionFallback(lane.window)?.trim(), t) || null;
+    const longReset = formatResetDateTimeLong(lane.window.resetsAt, locale);
+    const countdown = resetCountdown(lane.window.resetsAt, now);
+    const tooltip = [
+      `${lane.label}: ${Math.round(display)}% ${suffix}`,
+      longReset ? `↻ ${longReset}${countdown ? ` (${countdown})` : ""}` : fallbackReset,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return { lane, display, tone, reset: reset ?? fallbackReset, tooltip };
+  });
+
+  return (
+    <div
+      className="floatbar__pill floatbar__tile"
+      title={[provider.displayName, ...rows.map((row) => row.tooltip)].join("\n")}
+      data-tauri-drag-region
+      style={brandStyle(brand)}
+    >
+      <span className="floatbar__provider-icon" data-tauri-drag-region>
+        <ProviderIcon providerId={provider.providerId} size={iconSize} />
+      </span>
+      <span className="floatbar__lanes" data-tauri-drag-region>
+        {rows.map((row) => (
+          <span
+            key={row.lane.lane}
+            className={`floatbar__lane floatbar__lane--${row.tone}`}
+            data-lane={row.lane.lane}
+            data-tauri-drag-region
+          >
+            <span className="floatbar__lane-label" data-tauri-drag-region>
+              {row.lane.label}
+            </span>
+            <span className="floatbar__meter" aria-hidden="true" data-tauri-drag-region>
+              <span
+                className="floatbar__meter-fill"
+                style={{ width: `${row.display}%` }}
+                data-tauri-drag-region
+              />
+            </span>
+            <span className="floatbar__lane-pct" data-tauri-drag-region>
+              {`${Math.round(row.display)}%`}
+            </span>
+            <span className="floatbar__lane-reset" data-tauri-drag-region>
+              {row.reset ?? ""}
+            </span>
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 /**
  * The always-on-top floating capacity bar.
  *
@@ -413,6 +516,16 @@ export default function FloatBar({ state }: { state: BootstrapState }) {
   const scale = Math.max(0.75, Math.min(2, settings.floatBarScale / 100));
   const showResetInline = settings.floatBarShowResetInline;
   const showCost = settings.floatBarShowCost;
+  const detailed = settings.floatBarDetailed === true;
+  // Detailed tiles show absolute reset times ("today" vs weekday), so keep a
+  // minute clock while that mode is on.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!detailed) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, [detailed]);
   const visible = useMemo(() => {
     const enabled = new Set(settings.enabledProviders);
     let list = providers.filter((p) => enabled.has(p.providerId));
@@ -528,6 +641,7 @@ export default function FloatBar({ state }: { state: BootstrapState }) {
     scale,
     showResetInline,
     settings.resetTimeRelative,
+    detailed,
   ]);
 
   useEffect(() => {
@@ -560,7 +674,7 @@ export default function FloatBar({ state }: { state: BootstrapState }) {
       role="button"
       tabIndex={-1}
       aria-label={t("AppName")}
-      className={`floatbar floatbar--${orientation} floatbar--${style}${settings.floatBarDarkText ? " floatbar--light-bg" : ""}`}
+      className={`floatbar floatbar--${orientation} floatbar--${style}${detailed ? " floatbar--detailed" : ""}${settings.floatBarDarkText ? " floatbar--light-bg" : ""}`}
       data-tauri-drag-region
       onMouseDown={startDrag}
       style={
@@ -577,7 +691,21 @@ export default function FloatBar({ state }: { state: BootstrapState }) {
         </div>
       ) : (
         <>
-          {visible.map((p) => (
+          {visible.map((p) =>
+            detailed &&
+            !describeProviderState(p.errorState).isProblem &&
+            detailedLanes(p).length > 0 ? (
+              <DetailedProviderTile
+                key={providerCostKey(p)}
+                provider={p}
+                thresholds={settings}
+                showAsUsed={settings.showAsUsed}
+                scale={scale}
+                now={now}
+                usedSuffix={t("PanelUsedSuffix")}
+                remainingSuffix={t("FloatBarRemainingSuffix")}
+              />
+            ) : (
             <ProviderPill
               key={providerCostKey(p)}
               provider={p}
@@ -590,7 +718,8 @@ export default function FloatBar({ state }: { state: BootstrapState }) {
               remainingSuffix={t("FloatBarRemainingSuffix")}
               stateLabel={t(describeProviderState(p.errorState).labelKey)}
             />
-          ))}
+            ),
+          )}
           {visibleCosts.map((summary) => (
             <CostPill
               key={`cost:${summary.key}`}

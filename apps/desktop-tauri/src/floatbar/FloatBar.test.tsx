@@ -199,6 +199,7 @@ function settings(overrides: Partial<SettingsSnapshot> = {}): SettingsSnapshot {
     floatBarDarkText: false,
     floatBarShowResetInline: false,
     floatBarShowCost: false,
+    floatBarDetailed: false,
     claudeDailyRoutinesUsageVisible: true,
     claudeAllowReadingClaudeCodeCredentials: false,
     alibabaTokenPlanRegion: "cn",
@@ -1133,5 +1134,123 @@ describe("FloatBar", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("detailed meters", () => {
+    function withWindows(
+      snap: ProviderUsageSnapshot,
+      primaryMinutes: number | null,
+      secondaryMinutes: number | null,
+    ): ProviderUsageSnapshot {
+      return {
+        ...snap,
+        primary: { ...snap.primary, windowMinutes: primaryMinutes },
+        secondary: snap.secondary ? { ...snap.secondary, windowMinutes: secondaryMinutes } : null,
+      };
+    }
+
+    it("shows a 5h and a 7d meter with reset times per provider", async () => {
+      const claude = withWindows(
+        snapshot("claude", "Claude", 42, {
+          resetsAt: "2099-01-01T12:00:00Z",
+          secondary: { used: 18, resetsAt: "2099-01-05T09:00:00Z" },
+        }),
+        300,
+        10080,
+      );
+      tauriMocks.getCachedProviders.mockResolvedValue([claude]);
+      tauriMocks.getSettingsSnapshot.mockResolvedValue(settings({ floatBarDetailed: true }));
+
+      const { container } = renderFloatBar(bootstrap({ floatBarDetailed: true }));
+      await waitFor(() => {
+        expect(container.querySelectorAll(".floatbar__tile")).toHaveLength(1);
+      });
+
+      expect(container.querySelector(".floatbar")?.className).toContain("floatbar--detailed");
+      const lanes = Array.from(container.querySelectorAll(".floatbar__lane"));
+      expect(lanes.map((lane) => lane.getAttribute("data-lane"))).toEqual(["primary", "secondary"]);
+      expect(lanes.map((lane) => lane.querySelector(".floatbar__lane-label")?.textContent)).toEqual([
+        "5h",
+        "7d",
+      ]);
+      expect(lanes.map((lane) => lane.querySelector(".floatbar__lane-pct")?.textContent)).toEqual([
+        "42%",
+        "18%",
+      ]);
+      for (const lane of lanes) {
+        expect(lane.querySelector(".floatbar__lane-reset")?.textContent).not.toBe("");
+      }
+      const fill = container.querySelector<HTMLElement>(".floatbar__meter-fill");
+      expect(fill?.style.width).toBe("42%");
+      expect(container.querySelector(".floatbar__tile")?.getAttribute("title")).toContain("Claude");
+    });
+
+    it("shows remaining percentages when show-as-used is off", async () => {
+      const codex = withWindows(
+        snapshot("codex", "Codex", 30, { secondary: { used: 60 } }),
+        300,
+        10080,
+      );
+      tauriMocks.getCachedProviders.mockResolvedValue([codex]);
+      tauriMocks.getSettingsSnapshot.mockResolvedValue(
+        settings({ floatBarDetailed: true, showAsUsed: false }),
+      );
+
+      const { container } = renderFloatBar(
+        bootstrap({ floatBarDetailed: true, showAsUsed: false }),
+      );
+      await waitFor(() => {
+        expect(container.querySelectorAll(".floatbar__lane-pct")).toHaveLength(2);
+      });
+      const pcts = Array.from(container.querySelectorAll(".floatbar__lane-pct")).map(
+        (el) => el.textContent,
+      );
+      expect(pcts).toEqual(["70%", "40%"]);
+    });
+
+    it("colors a lane past the critical threshold", async () => {
+      const claude = withWindows(
+        snapshot("claude", "Claude", 95, { secondary: { used: 10 } }),
+        300,
+        10080,
+      );
+      tauriMocks.getCachedProviders.mockResolvedValue([claude]);
+      tauriMocks.getSettingsSnapshot.mockResolvedValue(settings({ floatBarDetailed: true }));
+
+      const { container } = renderFloatBar(bootstrap({ floatBarDetailed: true }));
+      await waitFor(() => {
+        expect(container.querySelectorAll(".floatbar__lane")).toHaveLength(2);
+      });
+      const lanes = container.querySelectorAll(".floatbar__lane");
+      expect(lanes[0].className).toContain("floatbar__lane--crit");
+      expect(lanes[1].className).toContain("floatbar__lane--ok");
+    });
+
+    it("keeps the compact pill for a provider in a problem state", async () => {
+      tauriMocks.getCachedProviders.mockResolvedValue([
+        snapshot("claude", "Claude", 0, { errorState: "needsAuthentication", error: "Sign in" }),
+        withWindows(snapshot("codex", "Codex", 30, { secondary: { used: 60 } }), 300, 10080),
+      ]);
+      tauriMocks.getSettingsSnapshot.mockResolvedValue(settings({ floatBarDetailed: true }));
+
+      const { container } = renderFloatBar(bootstrap({ floatBarDetailed: true }));
+      await waitFor(() => {
+        expect(container.querySelectorAll(".floatbar__pill")).toHaveLength(2);
+      });
+      expect(container.querySelectorAll(".floatbar__tile")).toHaveLength(1);
+    });
+
+    it("stays compact when the setting is off", async () => {
+      tauriMocks.getCachedProviders.mockResolvedValue([
+        withWindows(snapshot("codex", "Codex", 30, { secondary: { used: 60 } }), 300, 10080),
+      ]);
+      tauriMocks.getSettingsSnapshot.mockResolvedValue(settings());
+
+      const { container } = renderFloatBar(bootstrap());
+      await waitFor(() => {
+        expect(container.querySelectorAll(".floatbar__pill")).toHaveLength(1);
+      });
+      expect(container.querySelector(".floatbar__tile")).toBeNull();
+    });
   });
 });

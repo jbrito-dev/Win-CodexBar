@@ -319,6 +319,11 @@ export interface SettingsSnapshot {
   floatBarShowResetInline: boolean;
   /** When true, scan and render local cost summaries. */
   floatBarShowCost: boolean;
+  /**
+   * When true, each provider tile shows its session and weekly windows as two
+   * mini meters with absolute reset date/times instead of one pill.
+   */
+  floatBarDetailed: boolean;
   /** Promote the tray icon out of the Windows hidden-icons overflow (Win11 only). */
   promoteTrayIcon?: boolean;
   /** When true, show Claude Daily Routines quota row (default true). */
@@ -463,6 +468,7 @@ export interface SettingsUpdate {
   floatBarDarkText?: boolean;
   floatBarShowResetInline?: boolean;
   floatBarShowCost?: boolean;
+  floatBarDetailed?: boolean;
   promoteTrayIcon?: boolean;
   claudeDailyRoutinesUsageVisible?: boolean;
   alibabaTokenPlanRegion?: string;

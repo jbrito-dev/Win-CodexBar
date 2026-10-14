@@ -125,7 +125,7 @@ pub fn apply_state(app: &tauri::AppHandle, settings: &Settings) {
     }
 }
 
-/// All five settings fields the float bar owns, in a single optional
+/// All settings fields the float bar owns, in a single optional
 /// patch. Used by `update_settings` so the bulk of float-bar plumbing
 /// stays in this module rather than spread across the settings handler.
 #[derive(Debug, Default)]
@@ -140,6 +140,7 @@ pub struct SettingsPatch {
     pub dark_text: Option<bool>,
     pub show_reset_inline: Option<bool>,
     pub show_cost: Option<bool>,
+    pub detailed: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -154,6 +155,7 @@ impl SettingsPatch {
             && self.dark_text.is_none()
             && self.show_reset_inline.is_none()
             && self.show_cost.is_none()
+            && self.detailed.is_none()
     }
 
     /// Apply this patch to a mutable `Settings`. Values are clamped and
@@ -188,6 +190,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.show_cost {
             settings.float_bar_show_cost = v;
+        }
+        if let Some(v) = self.detailed {
+            settings.float_bar_detailed = v;
         }
     }
 }
@@ -242,6 +247,7 @@ mod tests {
             style: Some("taskbar".into()),
             dark_text: Some(true),
             show_reset_inline: Some(true),
+            detailed: Some(true),
             ..SettingsPatch::default()
         };
         patch.apply(&mut s);
@@ -251,6 +257,7 @@ mod tests {
         assert_eq!(s.float_bar_style, "taskbar");
         assert!(s.float_bar_dark_text);
         assert!(s.float_bar_show_reset_inline);
+        assert!(s.float_bar_detailed);
         // Orientation untouched by the patch.
         assert_eq!(s.float_bar_orientation, "horizontal");
     }

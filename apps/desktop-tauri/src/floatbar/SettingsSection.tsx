@@ -74,6 +74,17 @@ export default function FloatBarSettingsSection({ settings, saving, set }: Props
           />
         </Field>
         <Field
+          label={t("FloatBarDetailed")}
+          description={t("FloatBarDetailedHelper")}
+          leading
+        >
+          <Toggle
+            checked={settings.floatBarDetailed}
+            disabled={saving || !settings.floatBarEnabled}
+            onChange={(v) => set({ floatBarDetailed: v })}
+          />
+        </Field>
+        <Field
           label={`${t("FloatBarOpacity")} (${opacity.draft}%)`}
           description={t("FloatBarOpacityHelper")}
         >
