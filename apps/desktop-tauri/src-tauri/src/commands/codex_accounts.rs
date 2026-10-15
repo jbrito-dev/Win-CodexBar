@@ -6,7 +6,7 @@ use uuid::Uuid;
 use codexbar::codex_accounts::{
     AccountStore, CodexAccount, CodexAccountApi, CodexAccountManager, CodexAccountManagerError,
     CodexAccountRuntime, CodexAccountSource, CodexApiError, CodexSwitchResult, SnapshotStore,
-    display_names_by_id, ordinals_by_id, restart_codex_desktop,
+    display_names_by_id, ordinals_by_id, restart_codex_desktop_with,
 };
 use codexbar::notifications::CredentialAlertPolicy;
 use codexbar::settings::Settings;
@@ -545,7 +545,9 @@ pub fn codex_account_snapshots()
 pub async fn codex_account_restart_desktop(
     _app: tauri::AppHandle,
     switch_id: String,
+    launch_when_stopped: Option<bool>,
 ) -> Result<(), String> {
+    let launch_when_stopped = launch_when_stopped.unwrap_or(true);
     let runtime = CodexAccountRuntime::new();
     let _mutation = runtime.try_begin_mutation().map_err(into_user_message)?;
     let active = CodexAccountManager::new().discover_ambient_account(&[]);
@@ -553,11 +555,12 @@ pub async fn codex_account_restart_desktop(
         .pending_restart_for(&switch_id, active.as_ref())
         .map_err(into_user_message)?;
     tauri::async_runtime::spawn_blocking(move || {
-        restart_codex_desktop(
+        restart_codex_desktop_with(
             0.8,
             None,
             pending.desktop_session_backup_path.as_deref(),
             pending.desktop_session_restore_path.as_deref(),
+            launch_when_stopped,
         )
     })
     .await

@@ -40,6 +40,30 @@ pub fn build_restart_script(
     backup_destination: Option<&Path>,
     restore_source: Option<&Path>,
 ) -> String {
+    build_restart_script_with(
+        delay_seconds,
+        session_root,
+        backup_destination,
+        restore_source,
+        true,
+    )
+}
+
+/// Like [`build_restart_script`]; with `launch_when_stopped == false` a Codex
+/// Desktop that is not running only gets its session state swapped (so its
+/// next launch uses the new account) and is not started.
+pub fn build_restart_script_with(
+    delay_seconds: f64,
+    session_root: Option<&Path>,
+    backup_destination: Option<&Path>,
+    restore_source: Option<&Path>,
+    launch_when_stopped: bool,
+) -> String {
+    let launch_when_stopped_literal = if launch_when_stopped {
+        "$true"
+    } else {
+        "$false"
+    };
     // Delay is bounded, non-negative seconds rendered to whole milliseconds;
     // rounding already makes the value whole, so f64->u64 cannot overflow.
     #[expect(
@@ -63,6 +87,7 @@ $sessionRoot = {session_root_literal}
 $backupDestination = {backup_destination_literal}
 $restoreSource = {restore_source_literal}
 $sessionEntries = {session_entries_literal}
+$launchWhenStopped = {launch_when_stopped_literal}
 New-Item -ItemType Directory -Path ([System.IO.Path]::GetDirectoryName($logPath)) -Force | Out-Null
 trap {{
     Add-Content -LiteralPath $logPath -Value ("Restart failed: " + $_.Exception.Message)
@@ -168,6 +193,7 @@ Start-Sleep -Milliseconds {delay_ms}
 $codexProcesses = Get-CimInstance Win32_Process | Where-Object {{
     $_.ExecutablePath -and $_.ExecutablePath -ieq $launcherPath
 }}
+$wasRunning = [bool]$codexProcesses
 foreach ($process in $codexProcesses) {{
     if (-not (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue)) {{ continue }}
     Write-Log ("Stopping Desktop GUI process " + $process.ProcessId)
@@ -195,6 +221,10 @@ if ($remaining) {{
     throw 'Codex Desktop is still running. Session files were left unchanged.'
 }}
 Sync-DesktopSessionState
+if (-not $wasRunning -and -not $launchWhenStopped) {{
+    Write-Log 'Codex Desktop was not running; session state swapped, not launched.'
+    exit 0
+}}
 Start-Sleep -Milliseconds 700
 Start-Process -FilePath $launcherPath
 Write-Log 'Codex Desktop relaunched.'
@@ -243,12 +273,31 @@ pub fn restart_codex_desktop(
     backup_destination: Option<&Path>,
     restore_source: Option<&Path>,
 ) -> Result<(), CodexDesktopControlError> {
-    ensure_directories()?;
-    let script = build_restart_script(
+    restart_codex_desktop_with(
         delay_seconds,
         session_root,
         backup_destination,
         restore_source,
+        true,
+    )
+}
+
+/// [`restart_codex_desktop`] that leaves a stopped Codex Desktop stopped
+/// when `launch_when_stopped` is false.
+pub fn restart_codex_desktop_with(
+    delay_seconds: f64,
+    session_root: Option<&Path>,
+    backup_destination: Option<&Path>,
+    restore_source: Option<&Path>,
+    launch_when_stopped: bool,
+) -> Result<(), CodexDesktopControlError> {
+    ensure_directories()?;
+    let script = build_restart_script_with(
+        delay_seconds,
+        session_root,
+        backup_destination,
+        restore_source,
+        launch_when_stopped,
     );
     fs_write(restart_script_path(), script)?;
     launch_hidden_powershell(&restart_script_path())
@@ -519,6 +568,16 @@ if (-not $script:launched) {{ throw 'Restart aborted before relaunch' }}
         assert!(!script.contains("$_.Name -ieq 'Codex.exe'"));
         assert!(script.contains("Start-Process -FilePath $launcherPath"));
         assert!(script.contains("Start-Sleep -Milliseconds 1250"));
+    }
+
+    #[test]
+    fn restart_script_can_leave_a_stopped_desktop_stopped() {
+        let script = build_restart_script_with(0.5, None, None, None, false);
+        assert!(script.contains("$launchWhenStopped = $false"));
+        assert!(script.contains("$wasRunning = [bool]$codexProcesses"));
+        assert!(script.contains("session state swapped, not launched"));
+        let default_script = build_restart_script(0.5, None, None, None);
+        assert!(default_script.contains("$launchWhenStopped = $true"));
     }
 
     #[test]

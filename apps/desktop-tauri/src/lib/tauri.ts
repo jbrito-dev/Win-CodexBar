@@ -611,9 +611,11 @@ export function codexAccountSnapshots(): Promise<
 
 export function codexAccountRestartDesktop(
   switchId: string,
+  launchWhenStopped?: boolean,
 ): Promise<void> {
   return invoke<void>("codex_account_restart_desktop", {
     switchId,
+    ...(launchWhenStopped === undefined ? {} : { launchWhenStopped }),
   });
 }
 

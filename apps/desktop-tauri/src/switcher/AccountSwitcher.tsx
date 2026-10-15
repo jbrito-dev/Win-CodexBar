@@ -6,6 +6,7 @@ import { useTrayPanelLayout } from "../hooks/useTrayPanelLayout";
 import {
   claudeAccountSwitch,
   claudeAccountsList,
+  codexAccountRestartDesktop,
   codexAccountSwitch,
   getCodexAccountsState,
   getSettingsSnapshot,
@@ -113,7 +114,11 @@ export default function AccountSwitcher({ state }: { state: BootstrapState }) {
         await claudeAccountSwitch(row.id);
         setMessage({ kind: "ok", text: t("ClaudeAccountsSwitched") });
       } else {
-        await codexAccountSwitch(row.id);
+        const result = await codexAccountSwitch(row.id);
+        // Close and relaunch Codex Desktop on the new account. A stopped
+        // Desktop only gets its session state swapped; a missing Desktop
+        // install is not an error for the switch itself.
+        await codexAccountRestartDesktop(result.switchId, false).catch(() => {});
       }
       await load();
     } catch (error: unknown) {

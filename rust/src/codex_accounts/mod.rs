@@ -33,7 +33,7 @@ pub use account_manager::{CodexAccountManager, CodexAccountManagerError, CodexSw
 pub use api::{CodexAccountApi, CodexApiError};
 pub use codex_desktop::{
     CodexDesktopControlError, build_restart_command, build_restart_script,
-    encode_powershell_script, restart_codex_desktop,
+    encode_powershell_script, restart_codex_desktop, restart_codex_desktop_with,
 };
 pub use credentials::{AuthBackedIdentity, AuthCredentials, load_identity};
 pub use labels::{display_names_by_id, ordinals_by_id};
