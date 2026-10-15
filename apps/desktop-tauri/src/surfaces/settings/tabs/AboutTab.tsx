@@ -8,7 +8,10 @@ import type { LocaleKey } from "../../../i18n/keys";
 import type { TabProps } from "../settingsTabs";
 import codexbarIcon from "../../../assets/codexbar-icon.png";
 
-const REPO_URL = "https://github.com/nesszer/Win-CodexBar";
+// AgentBar is a fork of nesszer/Win-CodexBar (MIT), the Windows port of
+// steipete/CodexBar (MIT). See FORK.md.
+const REPO_URL = "https://github.com/jbrito-dev/Win-CodexBar";
+const UPSTREAM_URL = "https://github.com/nesszer/Win-CodexBar";
 const SUBMIT_ISSUE_URL = `${REPO_URL}/issues/new?labels=bug&template=bug_report.yml`;
 
 const ABOUT_LINKS: ReadonlyArray<{ labelKey: LocaleKey; url: string }> = [
@@ -17,8 +20,8 @@ const ABOUT_LINKS: ReadonlyArray<{ labelKey: LocaleKey; url: string }> = [
     url: REPO_URL,
   },
   {
-    labelKey: "AboutLinkWebsite",
-    url: "https://codexbar.app",
+    labelKey: "AboutLinkUpstream",
+    url: UPSTREAM_URL,
   },
   {
     labelKey: "AboutLinkOriginalProject",
@@ -226,6 +229,7 @@ export default function AboutTab({ settings, set, saving }: TabProps) {
         ))}
       </SettingsGroup>
 
+      <p className="about-copyright">{t("AboutForkNotice")}</p>
       <p className="about-copyright">
         {copyrightBefore}{" "}
         <button
@@ -233,7 +237,7 @@ export default function AboutTab({ settings, set, saving }: TabProps) {
           className="about-link about-link--inline"
           onClick={() => openAboutLink("https://github.com/steipete/CodexBar")}
         >
-          {t("AppName")}
+          CodexBar
         </button>
         {" "}{copyrightAfter}
       </p>

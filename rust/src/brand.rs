@@ -17,10 +17,15 @@ pub const UPSTREAM_APP_NAME: &str = "CodexBar";
 pub const REPO: &str = "jbrito-dev/Win-CodexBar";
 
 /// Swap the upstream product name for AgentBar in a user-facing string.
+/// The upstream project name "Win-CodexBar" is kept (used in credits).
 pub fn rebrand(text: String) -> String {
     if text.contains(UPSTREAM_APP_NAME) {
-        text.replace("Win-CodexBar", APP_NAME)
+        // "Win-CodexBar" names the upstream project (fork credits): keep it.
+        const KEEP: &str = "Win-CodexBar";
+        const MARK: &str = "\u{1}WCB\u{1}";
+        text.replace(KEEP, MARK)
             .replace(UPSTREAM_APP_NAME, APP_NAME)
+            .replace(MARK, KEEP)
     } else {
         text
     }
@@ -33,7 +38,10 @@ mod tests {
     #[test]
     fn rebrands_product_names_only() {
         assert_eq!(rebrand("About CodexBar".into()), "About AgentBar");
-        assert_eq!(rebrand("Win-CodexBar · local".into()), "AgentBar · local");
+        assert_eq!(
+            rebrand("fork of Win-CodexBar".into()),
+            "fork of Win-CodexBar"
+        );
         assert_eq!(rebrand("Codex Accounts".into()), "Codex Accounts");
     }
 }

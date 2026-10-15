@@ -1055,6 +1055,8 @@ export const ALL_LOCALE_KEYS = [
   "AboutLinkGitHub",
   "AboutLinkWebsite",
   "AboutLinkOriginalProject",
+  "AboutLinkUpstream",
+  "AboutForkNotice",
   "DiagnosticsSectionHeading",
   "DiagnosticsCopyButton",
   "DiagnosticsCopied",

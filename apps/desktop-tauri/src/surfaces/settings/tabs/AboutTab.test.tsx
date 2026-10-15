@@ -136,17 +136,17 @@ describe("AboutTab", () => {
     render(<AboutTab settings={settings} set={vi.fn()} saving={false} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "AboutLinkGitHub" }));
-    fireEvent.click(screen.getByRole("button", { name: "AboutLinkWebsite" }));
+    fireEvent.click(screen.getByRole("button", { name: "AboutLinkUpstream" }));
     fireEvent.click(screen.getByRole("button", { name: "AboutLinkOriginalProject" }));
     fireEvent.click(screen.getByRole("button", { name: "SubmitIssue" }));
 
     expect(tauriMocks.openExternalUrl).toHaveBeenNthCalledWith(
       1,
-      "https://github.com/nesszer/Win-CodexBar",
+      "https://github.com/jbrito-dev/Win-CodexBar",
     );
     expect(tauriMocks.openExternalUrl).toHaveBeenNthCalledWith(
       2,
-      "https://codexbar.app",
+      "https://github.com/nesszer/Win-CodexBar",
     );
     expect(tauriMocks.openExternalUrl).toHaveBeenNthCalledWith(
       3,
@@ -154,7 +154,7 @@ describe("AboutTab", () => {
     );
     expect(tauriMocks.openExternalUrl).toHaveBeenNthCalledWith(
       4,
-      "https://github.com/nesszer/Win-CodexBar/issues/new?labels=bug&template=bug_report.yml",
+      "https://github.com/jbrito-dev/Win-CodexBar/issues/new?labels=bug&template=bug_report.yml",
     );
   });
 
@@ -163,7 +163,7 @@ describe("AboutTab", () => {
 
     render(<AboutTab settings={settings} set={vi.fn()} saving={false} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "AboutLinkWebsite" }));
+    fireEvent.click(await screen.findByRole("button", { name: "AboutLinkUpstream" }));
 
     await waitFor(() => {
       expect(screen.getByText("ErrorPrefix no browser")).toBeInTheDocument();
@@ -230,7 +230,7 @@ describe("AboutTab Mac grouped layout", () => {
     );
     expect(linkRows).toEqual([
       "AboutLinkGitHub↗",
-      "AboutLinkWebsite↗",
+      "AboutLinkUpstream↗",
       "AboutLinkOriginalProject↗",
       "SubmitIssue↗",
     ]);

@@ -1,3 +1,8 @@
+> **AgentBar** — this repository is AgentBar, an independent, MIT-licensed fork of
+> [Win-CodexBar](https://github.com/nesszer/Win-CodexBar) (the Windows port of
+> [CodexBar](https://github.com/steipete/CodexBar)). It follows upstream and adds its own
+> changes on top; see [FORK.md](FORK.md). The upstream README follows.
+
 # Win-CodexBar
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文（臺灣）](./README.zh-TW.md) | [日本語](./README.ja-JP.md) | [한국어](./README.ko-KR.md) | [Español mexicano](./README.es-MX.md) | [Português (Brasil)](./README.pt-BR.md) | [Türkçe](./README.tr-TR.md)

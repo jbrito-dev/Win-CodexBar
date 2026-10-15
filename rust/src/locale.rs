@@ -1341,6 +1341,8 @@ locale_keys! {
     AboutLinkGitHub,
     AboutLinkWebsite,
     AboutLinkOriginalProject,
+    AboutLinkUpstream,
+    AboutForkNotice,
     DiagnosticsSectionHeading,
     DiagnosticsCopyButton,
     DiagnosticsCopied,

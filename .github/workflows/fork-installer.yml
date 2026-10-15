@@ -1,14 +1,16 @@
-name: Fork installer
+name: AgentBar installer
 
-# Builds an unsigned Windows installer for this fork and publishes it as a
-# GitHub pre-release. Upstream's release.yml needs SignPath credentials and is
-# pinned to nesszer/Win-CodexBar, so forks use this lighter pipeline instead.
+# Builds the unsigned AgentBar installer and publishes it as the GitHub
+# release `v<version>` (the in-app updater reads this repository's latest
+# release). Upstream's release.yml needs SignPath credentials and is pinned to
+# nesszer/Win-CodexBar, so the fork uses this lighter pipeline instead.
+# A rebuild of the same version replaces that release's assets.
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - feature/taskbar-detailed-meters
+      - main
 
 permissions:
   contents: write
@@ -117,24 +119,29 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $out = Join-Path $env:GITHUB_WORKSPACE 'installer-out'
           Push-Location rust/installer
-          & $iscc /Qp "/DAppVersion=$version" "/DTargetBinDir=$env:RUNNER_TEMP\stage" "/DWebView2BootstrapperPath=$env:RUNNER_TEMP\installer-deps\MicrosoftEdgeWebview2Setup.exe" "/DOutputDir=$out" "/DOutputBaseFilename=CodexBar-$version-taskbar-meters-Setup" codexbar.iss
+          & $iscc /Qp "/DAppVersion=$version" "/DTargetBinDir=$env:RUNNER_TEMP\stage" "/DWebView2BootstrapperPath=$env:RUNNER_TEMP\installer-deps\MicrosoftEdgeWebview2Setup.exe" "/DOutputDir=$out" "/DOutputBaseFilename=AgentBar-$version-Setup" codexbar.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
           Pop-Location
-          Copy-Item "$env:RUNNER_TEMP\stage\codexbar.exe" (Join-Path $out "CodexBar-$version-taskbar-meters-portable.exe")
+          Copy-Item "$env:RUNNER_TEMP\stage\codexbar.exe" (Join-Path $out "AgentBar-$version-portable.exe")
           Get-ChildItem $out
 
       - uses: actions/upload-artifact@v4
         with:
-          name: CodexBar-installer-${{ steps.version.outputs.short }}
+          name: AgentBar-installer-${{ steps.version.outputs.short }}
           path: installer-out/*.exe
 
-      - name: Publish pre-release
+      - name: Publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "taskbar-meters-${{ steps.version.outputs.short }}"
+          $version = '${{ steps.version.outputs.version }}'
+          $tag = "v$version"
+          $repo = '${{ github.repository }}'
           $files = Get-ChildItem installer-out/*.exe | ForEach-Object { $_.FullName }
-          gh release create $tag @files --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease `
-            --title "CodexBar ${{ steps.version.outputs.version }} + taskbar detailed meters (${{ steps.version.outputs.short }})" `
-            --notes "Unsigned fork build. Tray left-click: dark account switcher (Claude + Codex). Settings > Menu > Taskbar Meter > Show on Taskbar docks the meters on the taskbar (drag left/right)."
+          # Same version rebuilt: replace the release so the tag points at this commit.
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) { gh release delete $tag --repo $repo --cleanup-tag --yes }
+          $notes = "AgentBar $version (${{ steps.version.outputs.short }}), built from Win-CodexBar $version plus the AgentBar changes in FORK.md. Unsigned: if SmartScreen warns, choose More info > Run anyway."
+          gh release create $tag @files --repo $repo --target "${{ github.sha }}" --latest `
+            --title "AgentBar $version" --notes $notes

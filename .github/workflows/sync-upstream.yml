@@ -1,0 +1,92 @@
+name: Sync upstream
+
+# Merges nesszer/Win-CodexBar `main` into this fork's `main` so AgentBar keeps
+# every upstream provider and fix with its own changes on top. A clean merge is
+# pushed and a new installer is built; conflicts (or upstream workflow changes
+# the token may not push) open an issue to resolve by hand.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository != 'nesszer/Win-CodexBar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge upstream main
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/nesszer/Win-CodexBar.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date with upstream."
+            echo "result=uptodate" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git merge --no-edit -m "Merge upstream nesszer/Win-CodexBar main" upstream/main; then
+            if git push origin HEAD:main; then
+              echo "result=merged" >> "$GITHUB_OUTPUT"
+            else
+              echo "result=push-failed" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            git diff --name-only --diff-filter=U > conflicts.txt || true
+            git merge --abort || true
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build installer for the merged code
+        if: steps.merge.outputs.result == 'merged'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Pushes made with GITHUB_TOKEN do not start other workflows, so
+        # dispatch the installer build explicitly.
+        run: gh workflow run fork-installer.yml --repo "${{ github.repository }}" --ref main
+
+      - name: Report merge problems
+        if: steps.merge.outputs.result == 'conflict' || steps.merge.outputs.result == 'push-failed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="Upstream sync needs attention"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "$title in:title" --json number --jq '.[0].number')
+          {
+            echo "The daily merge of nesszer/Win-CodexBar \`main\` into \`main\` did not complete (${{ steps.merge.outputs.result }})."
+            echo
+            if [ -s conflicts.txt ]; then
+              echo "Conflicting files:"
+              sed 's/^/- `/; s/$/`/' conflicts.txt
+              echo
+            fi
+            echo "Resolve locally: \`git fetch upstream && git merge upstream/main\`, fix conflicts, push to \`main\`."
+            echo "If the push failed because upstream changed files under .github/workflows, push the merge with a personal token."
+            echo
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > body.md
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body-file body.md
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" --body-file body.md
+          fi

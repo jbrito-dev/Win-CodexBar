@@ -1,4 +1,4 @@
-#define MyAppName "CodexBar"
+#define MyAppName "AgentBar"
 #ifndef AppVersion
   #define AppVersion "0.0.0-dev"
 #endif
@@ -9,23 +9,23 @@
   #define OutputDir "..\\target\\installer"
 #endif
 #ifndef OutputBaseFilename
-  #define OutputBaseFilename "CodexBar-" + AppVersion + "-Setup"
+  #define OutputBaseFilename "AgentBar-" + AppVersion + "-Setup"
 #endif
 #ifndef WebView2BootstrapperPath
   #define WebView2BootstrapperPath "..\\target\\installer-deps\\MicrosoftEdgeWebview2Setup.exe"
 #endif
 
 [Setup]
-AppId=WinCodexBar
+AppId=AgentBar
 AppName={#MyAppName}
 AppVersion={#AppVersion}
 AppVerName={#MyAppName} {#AppVersion}
-AppPublisher=CodexBar Contributors
-AppPublisherURL=https://github.com/Finesssee/Win-CodexBar
-AppSupportURL=https://github.com/Finesssee/Win-CodexBar/issues
-AppUpdatesURL=https://github.com/Finesssee/Win-CodexBar/releases
-DefaultDirName={localappdata}\Programs\CodexBar
-DefaultGroupName=CodexBar
+AppPublisher=AgentBar (fork of Win-CodexBar)
+AppPublisherURL=https://github.com/jbrito-dev/Win-CodexBar
+AppSupportURL=https://github.com/jbrito-dev/Win-CodexBar/issues
+AppUpdatesURL=https://github.com/jbrito-dev/Win-CodexBar/releases
+DefaultDirName={localappdata}\Programs\AgentBar
+DefaultGroupName=AgentBar
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
@@ -52,12 +52,12 @@ Source: "..\icons\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#WebView2BootstrapperPath}"; Flags: dontcopy
 
 [Icons]
-Name: "{autoprograms}\CodexBar"; Filename: "{app}\codexbar.exe"; Parameters: "menubar"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
-Name: "{autodesktop}\CodexBar"; Filename: "{app}\codexbar.exe"; Parameters: "menubar"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\icon.ico"
+Name: "{autoprograms}\AgentBar"; Filename: "{app}\codexbar.exe"; Parameters: "menubar"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+Name: "{autodesktop}\AgentBar"; Filename: "{app}\codexbar.exe"; Parameters: "menubar"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\icon.ico"
 
 [Run]
 ; Interactive installs: optional checkbox on the finish page.
-Filename: "{app}\codexbar.exe"; Parameters: "menubar"; Description: "Launch CodexBar"; Flags: nowait postinstall skipifsilent; Check: CanLaunchCodexBar
+Filename: "{app}\codexbar.exe"; Parameters: "menubar"; Description: "Launch AgentBar"; Flags: nowait postinstall skipifsilent; Check: CanLaunchCodexBar
 ; Silent upgrades (winget / in-app updater): always relaunch so the tray icon
 ; returns after CloseApplications kills the previous process. Single-instance
 ; handles a second launch from the updater helper if both fire.
