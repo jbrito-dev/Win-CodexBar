@@ -118,14 +118,13 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let args = nonblank_launch_args(args);
-    let explicit_primary_launch = should_open_primary_window_from_args(&args);
-    let plain_desktop_launch = args.is_empty();
+    // AgentBar: a launch (Start menu, shortcut or login) stays in the tray;
+    // the account switcher opens from the tray icon. Only automation
+    // (`force_visible`) opens a panel at start.
+    let _ = (start_minimized, nonblank_launch_args(args));
 
     LaunchBehavior {
-        open_primary_window_at_start: force_visible
-            || explicit_primary_launch
-            || (plain_desktop_launch && !start_minimized),
+        open_primary_window_at_start: force_visible,
         suppress_blur_dismiss: force_visible,
     }
 }
@@ -516,25 +515,25 @@ mod tests {
     }
 
     #[test]
-    fn plain_desktop_launch_opens_unless_start_minimized() {
+    fn plain_desktop_launch_stays_in_the_tray() {
         assert_eq!(
             launch_behavior(false, false, std::iter::empty::<&str>()),
             LaunchBehavior {
-                open_primary_window_at_start: true,
+                open_primary_window_at_start: false,
                 suppress_blur_dismiss: false,
             }
         );
         assert_eq!(
             launch_behavior(false, false, [""]),
             LaunchBehavior {
-                open_primary_window_at_start: true,
+                open_primary_window_at_start: false,
                 suppress_blur_dismiss: false,
             }
         );
         assert_eq!(
             launch_behavior(false, false, ["  "]),
             LaunchBehavior {
-                open_primary_window_at_start: true,
+                open_primary_window_at_start: false,
                 suppress_blur_dismiss: false,
             }
         );
@@ -562,7 +561,7 @@ mod tests {
         assert_eq!(
             launch_behavior(false, true, ["menubar"]),
             LaunchBehavior {
-                open_primary_window_at_start: true,
+                open_primary_window_at_start: false,
                 suppress_blur_dismiss: false,
             }
         );
