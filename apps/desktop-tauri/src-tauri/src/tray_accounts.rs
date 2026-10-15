@@ -28,38 +28,51 @@ pub(crate) enum AccountMenuAction {
 }
 
 pub(crate) fn prepend_account_menus(spec: &mut Vec<TrayMenuEntry>, settings: &Settings) {
+    // Only offer account menus for providers that are enabled or already
+    // have saved accounts, so unused providers don't clutter the menu.
+    let enabled = |id: &str| settings.enabled_providers.contains(id);
+    let mut index = 0;
+
     let accounts = crate::commands::load_codex_accounts().unwrap_or_default();
-    let active =
-        codexbar::codex_accounts::CodexAccountManager::new().discover_ambient_account(&accounts);
-    spec.insert(
-        0,
-        codex_accounts_menu(
-            &accounts,
-            active.as_ref(),
-            settings.ui_language,
-            settings.hide_personal_info,
-        ),
-    );
+    if enabled("codex") || !accounts.is_empty() {
+        let active = codexbar::codex_accounts::CodexAccountManager::new()
+            .discover_ambient_account(&accounts);
+        spec.insert(
+            index,
+            codex_accounts_menu(
+                &accounts,
+                active.as_ref(),
+                settings.ui_language,
+                settings.hide_personal_info,
+            ),
+        );
+        index += 1;
+    }
 
     let claude_accounts = crate::commands::claude_accounts_list().unwrap_or_default();
-    spec.insert(
-        1,
-        claude_accounts_menu(
-            &claude_accounts,
-            settings.ui_language,
-            settings.hide_personal_info,
-        ),
-    );
+    if enabled("claude") || claude_accounts.iter().any(|account| account.is_saved) {
+        spec.insert(
+            index,
+            claude_accounts_menu(
+                &claude_accounts,
+                settings.ui_language,
+                settings.hide_personal_info,
+            ),
+        );
+        index += 1;
+    }
 
     let grok_accounts = crate::commands::grok_accounts_list().unwrap_or_default();
-    spec.insert(
-        2,
-        grok_accounts_menu(
-            &grok_accounts,
-            settings.ui_language,
-            settings.hide_personal_info,
-        ),
-    );
+    if enabled("grok") || grok_accounts.iter().any(|account| account.is_saved) {
+        spec.insert(
+            index,
+            grok_accounts_menu(
+                &grok_accounts,
+                settings.ui_language,
+                settings.hide_personal_info,
+            ),
+        );
+    }
 }
 
 pub(crate) fn resolve_action(id: &str) -> Option<AccountMenuAction> {
