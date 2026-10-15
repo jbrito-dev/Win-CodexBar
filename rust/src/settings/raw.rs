@@ -304,6 +304,10 @@ pub(super) struct RawSettings {
     float_bar_show_cost: bool,
     #[serde(default)]
     float_bar_detailed: bool,
+    #[serde(default)]
+    taskbar_meter_enabled: bool,
+    #[serde(default = "super::default_taskbar_meter_position")]
+    taskbar_meter_position: u16,
     #[serde(default = "default_true")]
     promote_tray_icon: bool,
     #[serde(default = "default_true")]
@@ -446,6 +450,8 @@ impl Default for RawSettings {
             float_bar_show_reset_inline: s.float_bar_show_reset_inline,
             float_bar_show_cost: s.float_bar_show_cost,
             float_bar_detailed: s.float_bar_detailed,
+            taskbar_meter_enabled: s.taskbar_meter_enabled,
+            taskbar_meter_position: s.taskbar_meter_position,
             promote_tray_icon: s.promote_tray_icon,
             claude_daily_routines_usage_visible: s.claude_daily_routines_usage_visible,
             claude_allow_reading_claude_code_credentials: s
@@ -801,6 +807,8 @@ impl From<RawSettings> for Settings {
             float_bar_show_reset_inline: raw.float_bar_show_reset_inline,
             float_bar_show_cost: raw.float_bar_show_cost,
             float_bar_detailed: raw.float_bar_detailed,
+            taskbar_meter_enabled: raw.taskbar_meter_enabled,
+            taskbar_meter_position: raw.taskbar_meter_position.min(1000),
             promote_tray_icon: raw.promote_tray_icon,
             claude_daily_routines_usage_visible: raw.claude_daily_routines_usage_visible,
             claude_allow_reading_claude_code_credentials: raw

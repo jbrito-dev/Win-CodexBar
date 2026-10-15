@@ -53,6 +53,7 @@ describe("MenuTab layout", () => {
       "MenuContentSectionTitle",
       "AgentSessionsTitle",
       "MenuCostSummarySectionTitle",
+      "TaskbarMeterSectionTitle",
     ]);
     const regions = screen.getAllByRole("region");
     expect(regions[regions.length - 1].getAttribute("aria-label")).toBe("FloatBarSection");

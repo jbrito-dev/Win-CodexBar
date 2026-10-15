@@ -1,0 +1,20 @@
+/* Taskbar meter: dark glass tiles that read as part of the Windows taskbar.
+ * The whole strip is the drag handle and only slides along the taskbar. */
+body.taskbar-meter-window #root {
+  min-height: 100vh;
+}
+.taskbar-meter {
+  cursor: ew-resize;
+  gap: 6px;
+  touch-action: none;
+}
+.taskbar-meter .floatbar__pill,
+.taskbar-meter .floatbar__tile {
+  cursor: ew-resize;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+.taskbar-meter .floatbar__pill:hover,
+.taskbar-meter .floatbar__tile:hover {
+  background: rgba(255, 255, 255, 0.11);
+}

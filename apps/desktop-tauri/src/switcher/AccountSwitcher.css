@@ -1,0 +1,255 @@
+/* ── Tray account switcher (dark) ─────────────────────────────────────
+ * Rendered in the flyout window when the tray icon is left-clicked. It
+ * reuses the tray-panel sizing classes (.menu-surface--tray, __body,
+ * __footer) so useTrayPanelLayout can measure it, and overrides the light
+ * dashboard palette with a dark one. */
+html:has(.switcher-reveal.tray-panel-reveal),
+body:has(.switcher-reveal.tray-panel-reveal),
+.switcher-reveal.tray-panel-reveal {
+  background: #171a21;
+}
+
+.menu-surface--tray.switcher {
+  --sw-bg: #171a21;
+  --sw-card: #20242d;
+  --sw-card-hover: #272c37;
+  --sw-border: rgba(255, 255, 255, 0.08);
+  --sw-text: #e8eaef;
+  --sw-text-2: #9aa1ae;
+  --sw-text-3: #6b7280;
+  --sw-track: rgba(255, 255, 255, 0.08);
+  --sw-ok: #22c55e;
+  --sw-warn: #f59e0b;
+  --sw-crit: #ef4444;
+  --sw-accent: #60a5fa;
+  gap: 8px;
+  padding: 10px 10px 6px;
+  background: var(--sw-bg);
+  color: var(--sw-text);
+  box-shadow: none;
+  border: 1px solid var(--sw-border);
+  font: 400 12px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+.switcher__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 0;
+}
+.switcher__brand {
+  font-weight: 600;
+  font-size: 13px;
+}
+.switcher__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--sw-border);
+  border-radius: 7px;
+  background: var(--sw-card);
+  color: var(--sw-text-2);
+  cursor: pointer;
+}
+.switcher__icon-button:hover {
+  color: var(--sw-text);
+  background: var(--sw-card-hover);
+}
+.switcher__icon-button--spinning svg {
+  animation: switcher-spin 0.9s linear infinite;
+}
+@keyframes switcher-spin {
+  to { transform: rotate(360deg); }
+}
+
+.switcher__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.switcher__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.switcher__section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+  color: var(--sw-text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.switcher__empty,
+.switcher__note {
+  color: var(--sw-text-3);
+  font-size: 11px;
+}
+.switcher__empty {
+  padding: 4px 2px;
+}
+
+.switcher__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--sw-border);
+  border-radius: 9px;
+  background: var(--sw-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.switcher__card--active {
+  border-color: rgba(34, 197, 94, 0.45);
+}
+.switcher__card--switchable {
+  cursor: pointer;
+  opacity: 0.9;
+}
+.switcher__card--switchable:hover:not(:disabled) {
+  background: var(--sw-card-hover);
+  opacity: 1;
+}
+.switcher__card:disabled {
+  cursor: progress;
+}
+.switcher__card--busy {
+  opacity: 0.6;
+}
+
+.switcher__card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.switcher__check {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--sw-ok);
+  font-weight: 700;
+}
+.switcher__email {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.switcher__plan {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sw-text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.switcher__lane {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 18px;
+}
+.switcher__lane-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.switcher__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sw-ok);
+}
+.switcher__dot--warn { background: var(--sw-warn); }
+.switcher__dot--crit { background: var(--sw-crit); }
+.switcher__bar {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--sw-track);
+  overflow: hidden;
+}
+.switcher__bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--fill, 0%);
+  border-radius: inherit;
+  background: var(--sw-ok);
+}
+.switcher__lane--warn .switcher__bar > span { background: var(--sw-warn); }
+.switcher__lane--crit .switcher__bar > span { background: var(--sw-crit); }
+.switcher__lane-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--sw-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.switcher__lane--ok .switcher__pct { color: var(--sw-ok); }
+.switcher__lane--warn .switcher__pct { color: var(--sw-warn); }
+.switcher__lane--crit .switcher__pct { color: var(--sw-crit); }
+.switcher__reset {
+  white-space: nowrap;
+}
+
+.switcher__message {
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.switcher__message--ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+.switcher__message--error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.menu-surface--tray.switcher .switcher__footer {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 8px 2px 4px;
+  border-top: 1px solid var(--sw-border);
+}
+.switcher__footer-actions {
+  display: inline-flex;
+  gap: 12px;
+}
+.switcher__link {
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sw-text);
+  font: inherit;
+  cursor: pointer;
+}
+.switcher__link:hover {
+  color: var(--sw-accent);
+}
+.switcher__link--muted {
+  color: var(--sw-text-2);
+}

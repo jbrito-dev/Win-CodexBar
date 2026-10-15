@@ -233,7 +233,7 @@ function brandStyle(brand: string): CSSProperties {
  * shows its text instead, keeps the neutral tone, and never turns that text
  * into reset wording.
  */
-function ProviderPill({
+export function ProviderPill({
   provider,
   thresholds,
   showAsUsed,
@@ -361,7 +361,7 @@ function intlLocale(locale: string): string | undefined {
  * provider has at least one quota lane and no problem state; otherwise the
  * compact pill (with its warning and informational handling) is used.
  */
-function DetailedProviderTile({
+export function DetailedProviderTile({
   provider,
   thresholds,
   showAsUsed,

@@ -18,6 +18,7 @@ mod status_poller;
 mod stay_awake;
 mod surface;
 mod surface_target;
+mod taskbar_meter;
 mod tray_accounts;
 mod tray_bridge;
 mod tray_menu;
@@ -216,6 +217,10 @@ fn main() {
             commands::begin_flyout_gesture,
             commands::end_flyout_gesture,
             commands::reveal_tray_panel_window,
+            commands::get_flyout_mode,
+            taskbar_meter::taskbar_meter_resize,
+            taskbar_meter::taskbar_meter_drag,
+            taskbar_meter::taskbar_meter_drag_end,
             commands::open_settings_window,
             commands::open_flyout_window,
             commands::close_settings_window,
@@ -341,6 +346,7 @@ fn main() {
             tray_bridge::setup(app)?;
             shortcut_bridge::register(app.handle());
             floatbar::install(app.handle());
+            taskbar_meter::install(app.handle());
             auto_refresh::install(app.handle().clone());
             stay_awake::install(app.handle().clone());
             if settings.powertoys_status_pipe_enabled {

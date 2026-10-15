@@ -733,6 +733,8 @@ pub struct CodexAccountsStateBridge {
     pub account_ordinals: HashMap<Uuid, usize>,
     pub snapshots: HashMap<Uuid, codexbar::codex_accounts::AccountUsageSnapshot>,
     pub needs_authentication: HashMap<Uuid, bool>,
+    /// Saved account that matches the ambient `~/.codex` login, if any.
+    pub active_account_id: Option<Uuid>,
 }
 
 #[tauri::command]
@@ -744,6 +746,14 @@ pub fn get_codex_accounts_state(
     let display_names = display_names_by_id(&accounts);
     let account_ordinals = ordinals_by_id(&accounts);
     let snapshots = snapshots_for_accounts(&accounts, codex_account_snapshots()?);
+    let active_account_id = CodexAccountManager::new()
+        .discover_ambient_account(&accounts)
+        .and_then(|ambient| {
+            accounts
+                .iter()
+                .find(|account| ambient.matches(account))
+                .map(|account| account.id)
+        });
     let guard = state.lock().map_err(|e| e.to_string())?;
     let needs_authentication = guard
         .codex_account_needs_authentication
@@ -757,6 +767,7 @@ pub fn get_codex_accounts_state(
         account_ordinals,
         snapshots,
         needs_authentication,
+        active_account_id,
     })
 }
 

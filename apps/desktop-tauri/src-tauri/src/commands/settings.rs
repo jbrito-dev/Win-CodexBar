@@ -100,6 +100,8 @@ pub struct SettingsUpdate {
     pub float_bar_show_reset_inline: Option<bool>,
     pub float_bar_show_cost: Option<bool>,
     pub float_bar_detailed: Option<bool>,
+    pub taskbar_meter_enabled: Option<bool>,
+    pub taskbar_meter_position: Option<u16>,
     pub promote_tray_icon: Option<bool>,
     pub claude_daily_routines_usage_visible: Option<bool>,
     pub alibaba_token_plan_region: Option<String>,
@@ -604,6 +606,12 @@ impl SettingsUpdate {
             .apply_notification_settings(settings)?
             .apply_advanced_settings(settings);
         float_bar_patch.apply(settings);
+        if let Some(v) = self.taskbar_meter_enabled {
+            settings.taskbar_meter_enabled = v;
+        }
+        if let Some(v) = self.taskbar_meter_position {
+            settings.taskbar_meter_position = v.min(crate::taskbar_meter::POSITION_MAX);
+        }
         Ok(float_bar_patch)
     }
 }
@@ -717,6 +725,7 @@ pub async fn update_settings(
     let rebuild_tray_menu = patch.rebuilds_tray_menu();
     let refresh_tray_presentation = patch.refreshes_tray_presentation();
     let stay_awake_changed = patch.stay_awake_enabled.is_some();
+    let taskbar_meter_changed = patch.taskbar_meter_enabled.is_some();
     let tray_promotion_changed = patch.changes_tray_promotion();
     let tray_panel_always_on_top_changed = patch.tray_panel_always_on_top.is_some();
     let previous_promoted = settings.promote_tray_icon;
@@ -760,6 +769,9 @@ pub async fn update_settings(
     }
 
     crate::floatbar::after_settings_saved(&app, &float_bar_patch, &settings, notify_float_bar);
+    if taskbar_meter_changed {
+        crate::taskbar_meter::apply_state(&app, &settings);
+    }
     if stay_awake_changed {
         crate::stay_awake::settings_changed(&app, settings.stay_awake_enabled);
     }

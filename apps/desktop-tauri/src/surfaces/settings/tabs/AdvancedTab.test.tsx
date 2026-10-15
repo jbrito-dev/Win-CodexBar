@@ -86,6 +86,8 @@ const settings: SettingsSnapshot = {
   floatBarShowResetInline: false,
   floatBarShowCost: false,
   floatBarDetailed: false,
+  taskbarMeterEnabled: false,
+  taskbarMeterPosition: 250,
   claudeDailyRoutinesUsageVisible: true,
   claudeAllowReadingClaudeCodeCredentials: false,
   alibabaTokenPlanRegion: "cn",

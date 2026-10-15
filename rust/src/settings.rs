@@ -423,6 +423,16 @@ pub struct Settings {
     #[serde(default)]
     pub float_bar_detailed: bool,
 
+    /// Show the taskbar meter: a small window docked onto the taskbar strip
+    /// with the current account's session and weekly meters.
+    #[serde(default)]
+    pub taskbar_meter_enabled: bool,
+
+    /// Where the taskbar meter sits along the taskbar, in per mille of the
+    /// available travel (0 = start, 1000 = end).
+    #[serde(default = "default_taskbar_meter_position")]
+    pub taskbar_meter_position: u16,
+
     /// Promote the tray icon out of the Windows hidden-icons overflow area.
     /// Only has effect on Windows 11 (build ≥ 22000); silently ignored elsewhere.
     /// Defaults on so upgrades keep the icon pinned to the taskbar notification area.
@@ -532,6 +542,10 @@ pub fn clamp_tray_scale_percent(value: u16) -> u16 {
 
 fn default_float_bar_opacity() -> u8 {
     80
+}
+
+fn default_taskbar_meter_position() -> u16 {
+    250
 }
 
 fn default_float_bar_scale() -> u8 {
@@ -744,6 +758,8 @@ impl Default for Settings {
             float_bar_show_reset_inline: false,
             float_bar_show_cost: false,
             float_bar_detailed: false,
+            taskbar_meter_enabled: false,
+            taskbar_meter_position: default_taskbar_meter_position(),
             promote_tray_icon: true,
             claude_daily_routines_usage_visible: true,
             claude_allow_reading_claude_code_credentials: false,

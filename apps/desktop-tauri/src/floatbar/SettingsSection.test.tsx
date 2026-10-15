@@ -15,6 +15,8 @@ const settings = {
   floatBarStyle: "floating",
   floatBarShowCost: false,
   floatBarDetailed: false,
+  taskbarMeterEnabled: false,
+  taskbarMeterPosition: 250,
   claudeDailyRoutinesUsageVisible: true,
   claudeAllowReadingClaudeCodeCredentials: false,
   alibabaTokenPlanRegion: "cn",

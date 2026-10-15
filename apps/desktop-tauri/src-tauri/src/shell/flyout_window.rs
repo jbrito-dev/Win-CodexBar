@@ -5,11 +5,11 @@
 //! is retired.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use codexbar::settings::Settings;
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl};
 
 use super::activation::{self, Activation};
 use crate::state::AppState;
@@ -19,6 +19,77 @@ pub const FLYOUT_LABEL: &str = "flyout";
 
 /// The window paints this before the page loads and on every erase.
 const PANEL_FILL: tauri::utils::config::Color = tauri::utils::config::Color(0xDE, 0xDE, 0xE2, 0xFF);
+/// Erase fill while the flyout shows the dark account switcher.
+const SWITCHER_FILL: tauri::utils::config::Color =
+    tauri::utils::config::Color(0x17, 0x1A, 0x21, 0xFF);
+
+/// Event the flyout webview listens to for content-mode swaps.
+pub const FLYOUT_MODE_EVENT: &str = "flyout-mode-changed";
+
+/// What the flyout window shows. Tray left-click opens the compact account
+/// switcher; every other path (Pop Out Dashboard, global shortcut, launch)
+/// opens the full dashboard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlyoutMode {
+    Dashboard,
+    Switcher,
+}
+
+impl FlyoutMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dashboard => "dashboard",
+            Self::Switcher => "switcher",
+        }
+    }
+
+    fn to_u8(self) -> u8 {
+        match self {
+            Self::Dashboard => 0,
+            Self::Switcher => 1,
+        }
+    }
+
+    fn from_u8(value: u8) -> Self {
+        if value == 1 {
+            Self::Switcher
+        } else {
+            Self::Dashboard
+        }
+    }
+
+    fn fill(self) -> tauri::utils::config::Color {
+        match self {
+            Self::Dashboard => PANEL_FILL,
+            Self::Switcher => SWITCHER_FILL,
+        }
+    }
+}
+
+static FLYOUT_MODE: AtomicU8 = AtomicU8::new(0);
+
+/// The flyout's current content mode.
+pub fn mode() -> FlyoutMode {
+    FlyoutMode::from_u8(FLYOUT_MODE.load(Ordering::Relaxed))
+}
+
+/// Store `mode`, tell the webview, and repaint the erase fill. Returns true
+/// when the mode actually changed.
+fn set_mode(app: &AppHandle, mode: FlyoutMode) -> bool {
+    let previous = FLYOUT_MODE.swap(mode.to_u8(), Ordering::Relaxed);
+    let changed = previous != mode.to_u8();
+    if changed {
+        let _ = app.emit(FLYOUT_MODE_EVENT, mode.as_str());
+        if let Some(window) = app.get_webview_window(FLYOUT_LABEL) {
+            let _ = window.set_background_color(Some(mode.fill()));
+        }
+    }
+    changed
+}
+
+/// How long a mode-swapped hidden flyout waits for the webview's reveal
+/// before it is shown anyway.
+const MODE_SWAP_REVEAL_FALLBACK: Duration = Duration::from_millis(700);
 
 /// Same window used to close a same-click blur-dismiss/reopen race as the
 /// pre-split tray panel handling (formerly `shell::transition::handle_tray_panel_click`,
@@ -62,7 +133,7 @@ pub fn open_or_focus(
     position: Option<(i32, i32)>,
     activation: Activation,
 ) -> Result<(), String> {
-    open_with_anchor(app, position, None, activation)
+    open_with_anchor(app, position, None, activation, FlyoutMode::Dashboard)
 }
 
 /// Open a desktop launch near its captured cursor location, retaining that
@@ -72,7 +143,7 @@ pub fn open_near_cursor(
     cursor: Option<(f64, f64)>,
     activation: Activation,
 ) -> Result<(), String> {
-    open_with_anchor(app, None, cursor, activation)
+    open_with_anchor(app, None, cursor, activation, FlyoutMode::Dashboard)
 }
 
 fn open_with_anchor(
@@ -80,7 +151,9 @@ fn open_with_anchor(
     position: Option<(i32, i32)>,
     cursor: Option<(f64, f64)>,
     activation: Activation,
+    mode: FlyoutMode,
 ) -> Result<(), String> {
+    let mode_changed = set_mode(app, mode);
     app.state::<Mutex<AppState>>()
         .lock()
         .map_err(|e| e.to_string())?
@@ -94,6 +167,14 @@ fn open_with_anchor(
             let _set_position = window.set_position(PhysicalPosition::new(x, y));
         } else {
             reanchor(app)?;
+        }
+        if mode_changed && !window.is_visible().unwrap_or(false) {
+            // The webview still shows the other mode's content: let it swap,
+            // re-measure and reveal itself (same handshake as first open),
+            // with a fallback so the click never goes unanswered.
+            arm_reveal(app, activation)?;
+            schedule_reveal_fallback(app);
+            return Ok(());
         }
         window.show().map_err(|e| e.to_string())?;
         activation::apply(&window, activation)?;
@@ -125,7 +206,7 @@ fn open_with_anchor(
         // WebView2 shares `prefers-color-scheme` across the profile, so the
         // flyout stays pinned dark like the other windows.
         .theme(Some(tauri::Theme::Dark))
-        .background_color(PANEL_FILL)
+        .background_color(mode.fill())
         // CRITICAL: dynamically-built windows default to drag-drop ENABLED,
         // which intercepts the HTML5 draggable events the provider grid's
         // drag-reorder (ProviderGrid.tsx) relies on — see `main`'s
@@ -205,6 +286,38 @@ fn arm_reveal(app: &AppHandle, activation: Activation) -> Result<(), String> {
 ///
 /// Must be called from an async context — see [`open_or_focus`].
 pub fn toggle_with_blur_consume(app: &AppHandle, position: Option<(i32, i32)>) {
+    toggle_mode(app, position, FlyoutMode::Dashboard);
+}
+
+/// Tray left-click: toggle the compact account switcher. When the flyout is
+/// already open on the dashboard, swap its content instead of closing it.
+pub fn toggle_switcher(app: &AppHandle) {
+    toggle_mode(app, None, FlyoutMode::Switcher);
+}
+
+fn schedule_reveal_fallback(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(MODE_SWAP_REVEAL_FALLBACK).await;
+        let Some(window) = app.get_webview_window(FLYOUT_LABEL) else {
+            return;
+        };
+        let pending = app.try_state::<Mutex<AppState>>().and_then(|state| {
+            state
+                .lock()
+                .ok()
+                .and_then(|mut guard| guard.take_pending_flyout_reveal())
+        });
+        if let Some(activation) = pending {
+            if window.show().is_ok() {
+                mark_shown(&app);
+                let _ = activation::apply(&window, activation);
+            }
+        }
+    });
+}
+
+fn toggle_mode(app: &AppHandle, position: Option<(i32, i32)>, mode: FlyoutMode) {
     let consumed_blur_dismissal = {
         let st = app.state::<Mutex<AppState>>();
         st.lock()
@@ -217,6 +330,11 @@ pub fn toggle_with_blur_consume(app: &AppHandle, position: Option<(i32, i32)>) {
     }
 
     if is_open(app) {
+        if self::mode() != mode {
+            // Open on the other content: swap in place, keep it open.
+            set_mode(app, mode);
+            return;
+        }
         // Tray-toggle is fire-and-forget; a hide error leaves the window
         // closed from the user's perspective and is non-fatal.
         let _hide = hide(app);
@@ -224,7 +342,7 @@ pub fn toggle_with_blur_consume(app: &AppHandle, position: Option<(i32, i32)>) {
         // Tray-toggle is fire-and-forget; open_or_focus surfaces its own
         // errors via tracing, so the toggle call site discards the result.
         // Both callers (tray left-click, global hotkey) are user actions.
-        let _open = open_or_focus(app, position, Activation::UserAction);
+        let _open = open_with_anchor(app, position, None, Activation::UserAction, mode);
     }
 }
 

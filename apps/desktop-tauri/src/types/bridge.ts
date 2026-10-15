@@ -324,6 +324,10 @@ export interface SettingsSnapshot {
    * mini meters with absolute reset date/times instead of one pill.
    */
   floatBarDetailed: boolean;
+  /** Show the taskbar-docked meter window. */
+  taskbarMeterEnabled: boolean;
+  /** Slide position along the taskbar, per mille (0–1000). */
+  taskbarMeterPosition: number;
   /** Promote the tray icon out of the Windows hidden-icons overflow (Win11 only). */
   promoteTrayIcon?: boolean;
   /** When true, show Claude Daily Routines quota row (default true). */
@@ -469,6 +473,8 @@ export interface SettingsUpdate {
   floatBarShowResetInline?: boolean;
   floatBarShowCost?: boolean;
   floatBarDetailed?: boolean;
+  taskbarMeterEnabled?: boolean;
+  taskbarMeterPosition?: number;
   promoteTrayIcon?: boolean;
   claudeDailyRoutinesUsageVisible?: boolean;
   alibabaTokenPlanRegion?: string;
@@ -1380,6 +1386,8 @@ export interface CodexAccountsStateBridge {
   accountOrdinals: Record<string, number>;
   snapshots: Record<string, CodexAccountUsageSnapshot>;
   needsAuthentication?: Record<string, boolean>;
+  /** Saved account matching the ambient `~/.codex` login. */
+  activeAccountId?: string | null;
 }
 export interface ClaudeAccount {
   id: string;

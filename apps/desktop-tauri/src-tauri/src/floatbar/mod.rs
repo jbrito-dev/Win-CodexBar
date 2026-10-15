@@ -13,6 +13,7 @@ mod window;
 pub use commands::*;
 pub use window::FLOAT_BAR_CONFIG_CHANGED_EVENT;
 pub use window::FLOATBAR_LABEL;
+pub(crate) use window::{apply_always_on_top, apply_no_activate};
 
 use codexbar::settings::Settings;
 use tauri::{Emitter, Manager};

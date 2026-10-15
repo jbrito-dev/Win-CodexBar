@@ -209,9 +209,9 @@ fn store_anchor(app: &AppHandle, rect: &tauri::Rect, click_position: tauri::Phys
 pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_native_tray_menu(app.handle(), &crate::commands::get_provider_catalog(), &[])?;
 
-    // Embed the icon at compile time so it works regardless of working directory.
-    let icon_bytes = include_bytes!("../../../../rust/icons/icon.png");
-    let icon = Image::from_bytes(icon_bytes)?;
+    // Static gauge glyph (lucide "circle-gauge", ISC): the tray icon no
+    // longer draws usage meters; those live in the switcher and taskbar meter.
+    let icon = static_tray_icon()?;
 
     let _tray = TrayIconBuilder::with_id("codexbar-main")
         .icon(icon)
@@ -241,7 +241,9 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     // synchronously — the WebviewWindowBuilder deadlock only
                     // affects builds invoked from *synchronous Tauri IPC
                     // commands*, not native event-loop callbacks.
-                    shell::flyout_window::toggle_with_blur_consume(app, None);
+                    // Left-click opens the compact account switcher; the
+                    // full dashboard lives on the right-click menu.
+                    shell::flyout_window::toggle_switcher(app);
                 }
             }
         })
@@ -405,17 +407,42 @@ pub fn update_tray_icon_and_tooltip(
     };
 
     let settings = Settings::load();
-    let rates_cache = app
-        .try_state::<crate::commands::CurrencyRateCache>()
-        .map(|state| state.inner());
-    let plan = TrayPresentationPlan::resolve(&settings, snapshots, rates_cache);
-    let (rgba, w, h) = plan.render_icon();
-    let icon = Image::new_owned(rgba, w, h);
-    let _ = tray.set_icon(Some(icon));
+    // The icon is a static glyph; re-set it so a taskbar theme switch
+    // (light/dark) picks the matching variant on the next refresh.
+    if let Ok(icon) = static_tray_icon() {
+        let _ = tray.set_icon(Some(icon));
+    }
 
     let tooltip = build_tooltip(snapshots, settings.ui_language, settings.hide_personal_info);
     let tooltip = crate::status_poller::with_incident_lines(app, &settings, tooltip);
     let _ = tray.set_tooltip(Some(tooltip));
+}
+
+/// The static tray glyph, in the variant that reads on the current taskbar.
+fn static_tray_icon() -> tauri::Result<Image<'static>> {
+    let bytes: &'static [u8] = if taskbar_uses_light_theme() {
+        include_bytes!("../../../../rust/icons/tray-gauge-dark.png")
+    } else {
+        include_bytes!("../../../../rust/icons/tray-gauge-light.png")
+    };
+    Image::from_bytes(bytes)
+}
+
+/// Whether the Windows taskbar uses the light theme (dark glyph needed).
+fn taskbar_uses_light_theme() -> bool {
+    #[cfg(windows)]
+    {
+        use winreg::RegKey;
+        use winreg::enums::HKEY_CURRENT_USER;
+        RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize")
+            .and_then(|key| key.get_value::<u32, _>("SystemUsesLightTheme"))
+            .is_ok_and(|value| value != 0)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// Build a compact multi-line tooltip string from provider snapshots.

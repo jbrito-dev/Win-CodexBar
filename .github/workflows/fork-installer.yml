@@ -53,7 +53,7 @@ jobs:
         run: pnpm --dir apps/desktop-tauri install --frozen-lockfile
 
       - name: Frontend tests (float bar)
-        run: pnpm --dir apps/desktop-tauri exec vitest run src/floatbar
+        run: pnpm --dir apps/desktop-tauri exec vitest run src/floatbar src/switcher src/surfaces/settings/tabs/MenuTab.test.tsx
 
       - name: Build desktop app
         run: pnpm --dir apps/desktop-tauri exec tauri build --ci --no-bundle
@@ -122,4 +122,4 @@ jobs:
           $files = Get-ChildItem installer-out/*.exe | ForEach-Object { $_.FullName }
           gh release create $tag @files --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease `
             --title "CodexBar ${{ steps.version.outputs.version }} + taskbar detailed meters (${{ steps.version.outputs.short }})" `
-            --notes "Unsigned fork build. Enable it in Settings > Menu > Floating Bar > Detailed Meters (use Style: Taskbar to dock it on the taskbar)."
+            --notes "Unsigned fork build. Tray left-click: dark account switcher (Claude + Codex). Settings > Menu > Taskbar Meter > Show on Taskbar docks the meters on the taskbar (drag left/right)."

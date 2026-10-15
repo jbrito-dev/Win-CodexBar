@@ -9,6 +9,7 @@ import type {
 } from "../../../types/bridge";
 import type { TabProps } from "../settingsTabs";
 import FloatBarSettingsSection from "../../../floatbar/SettingsSection";
+import TaskbarMeterSettingsSection from "../../../taskbarmeter/SettingsSection";
 import { normalizeCostPeriod } from "../../../lib/costPeriod";
 import {
   clampTrayScalePercent,
@@ -261,6 +262,7 @@ export default function MenuTab({ settings, set, saving }: TabProps) {
         </Field>
       </SettingsGroup>
 
+      <TaskbarMeterSettingsSection settings={settings} saving={saving} set={set} />
       <FloatBarSettingsSection settings={settings} saving={saving} set={set} />
     </>
   );

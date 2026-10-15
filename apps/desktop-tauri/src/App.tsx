@@ -11,6 +11,7 @@ import { useSurfaceSnapshot } from "./hooks/useSurfaceSnapshot";
 import { useTheme } from "./hooks/useTheme";
 import { useLocale } from "./hooks/useLocale";
 import TrayPanel from "./surfaces/TrayPanel";
+import FlyoutRoot from "./switcher/FlyoutRoot";
 import { FLOATBAR_WINDOW_LABEL } from "./floatbar/api";
 import { LocaleProvider } from "./i18n/LocaleProvider";
 import type { BootstrapState, ThemePreference } from "./types/bridge";
@@ -20,6 +21,7 @@ import { CurrencyProvider } from "./hooks/CurrencyProvider";
 
 const Settings = lazy(() => import("./surfaces/Settings"));
 const FloatBar = lazy(() => import("./floatbar/FloatBar"));
+const TaskbarMeter = lazy(() => import("./taskbarmeter/TaskbarMeter"));
 
 function SurfaceFallback() {
   return null;
@@ -33,6 +35,11 @@ function isSettingsWindow(): boolean {
 /** True when running inside the detached FloatBar window. */
 function isFloatBarWindow(): boolean {
   return getCurrentWebviewWindow().label === FLOATBAR_WINDOW_LABEL;
+}
+
+/** True when running inside the taskbar-docked meter window. */
+function isTaskbarMeterWindow(): boolean {
+  return getCurrentWebviewWindow().label === "taskbarmeter";
 }
 
 /** True when running inside the detached flyout ("Pop Out Dashboard") window. */
@@ -184,7 +191,15 @@ function AppInner() {
   // TrayPanel is statically imported (not lazy), so no Suspense boundary is
   // needed here, unlike the other detached-window branches above.
   if (isFlyoutWindow()) {
-    return <TrayPanel state={state} />;
+    return <FlyoutRoot state={state} />;
+  }
+
+  if (isTaskbarMeterWindow()) {
+    return (
+      <Suspense fallback={<SurfaceFallback />}>
+        <TaskbarMeter state={state} />
+      </Suspense>
+    );
   }
 
   return <SurfaceRouter surface={surface} state={state} />;

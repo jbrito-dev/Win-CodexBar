@@ -129,6 +129,8 @@ const ALLOWED_PREFERENCES: &[(&str, Validator)] = &[
     ("float_bar_show_reset_inline", typed::<bool>),
     ("float_bar_show_cost", typed::<bool>),
     ("float_bar_detailed", typed::<bool>),
+    ("taskbar_meter_enabled", typed::<bool>),
+    ("taskbar_meter_position", uint_in::<0, 1000>),
     ("cost_reporting_period", cost_reporting_period),
     ("cost_usage_enabled", typed::<bool>),
     ("spend_dashboard_period", cost_reporting_period),

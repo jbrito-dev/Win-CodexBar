@@ -104,6 +104,13 @@ pub fn reveal_tray_panel_window(
     crate::shell::activation::apply(&window, activation)
 }
 
+/// The flyout's current content mode (`"switcher"` or `"dashboard"`), read by
+/// the flyout webview on mount; later swaps arrive as `flyout-mode-changed`.
+#[tauri::command]
+pub fn get_flyout_mode() -> String {
+    crate::shell::flyout_window::mode().as_str().to_string()
+}
+
 #[tauri::command]
 pub fn close_settings_window(
     app: tauri::AppHandle,
