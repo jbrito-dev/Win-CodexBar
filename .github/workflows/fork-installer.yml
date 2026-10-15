@@ -56,7 +56,22 @@ jobs:
         run: pnpm --dir apps/desktop-tauri exec vitest run src/floatbar src/switcher src/surfaces/settings/tabs/MenuTab.test.tsx
 
       - name: Build desktop app
-        run: pnpm --dir apps/desktop-tauri exec tauri build --ci --no-bundle
+        shell: pwsh
+        run: |
+          pnpm --dir apps/desktop-tauri exec tauri build --ci --no-bundle 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            # Surface compiler errors as annotations (readable via the API).
+            $lines = Get-Content build.log
+            $count = 0
+            for ($i = 0; $i -lt $lines.Count -and $count -lt 10; $i++) {
+              if ($lines[$i] -match '^error') {
+                $block = ($lines[$i..([Math]::Min($i + 14, $lines.Count - 1))] -join "%0A")
+                Write-Output "::error title=rustc::$block"
+                $count++
+              }
+            }
+            exit 1
+          }
 
       - name: Build CLI
         run: cargo build --manifest-path rust/Cargo.toml --release --bin codexbar

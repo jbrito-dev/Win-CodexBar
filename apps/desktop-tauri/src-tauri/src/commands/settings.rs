@@ -600,16 +600,18 @@ impl SettingsUpdate {
             settings.set_seat_credit_entitlement(codexbar::core::ProviderId::Copilot, value)?;
         }
         let float_bar_patch = self.float_bar_patch();
+        let taskbar_meter_enabled = self.taskbar_meter_enabled;
+        let taskbar_meter_position = self.taskbar_meter_position;
         self.apply_provider_settings(settings)
             .apply_general_settings(settings)?
             .apply_display_settings(settings)
             .apply_notification_settings(settings)?
             .apply_advanced_settings(settings);
         float_bar_patch.apply(settings);
-        if let Some(v) = self.taskbar_meter_enabled {
+        if let Some(v) = taskbar_meter_enabled {
             settings.taskbar_meter_enabled = v;
         }
-        if let Some(v) = self.taskbar_meter_position {
+        if let Some(v) = taskbar_meter_position {
             settings.taskbar_meter_position = v.min(crate::taskbar_meter::POSITION_MAX);
         }
         Ok(float_bar_patch)
