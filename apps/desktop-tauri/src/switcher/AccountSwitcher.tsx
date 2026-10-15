@@ -96,7 +96,9 @@ export default function AccountSwitcher({ state }: { state: BootstrapState }) {
     ...sections.map((s) => `${s.provider}:${s.rows.map((r) => `${r.title}${r.active}${r.lanes.length}${r.note ?? ""}`).join(",")}`),
   ].join("|");
   const { layoutReady, requestLayout } = useTrayPanelLayout({
-    canMeasure: loaded || hasLoadedCache,
+    // Measure (and reveal) only once the account lists are in, so the panel
+    // opens at its final size instead of growing while data arrives.
+    canMeasure: loaded && hasLoadedCache,
     denseOverview: false,
     detailMode: false,
     layoutKey,

@@ -143,7 +143,9 @@ pub fn open_near_cursor(
     cursor: Option<(f64, f64)>,
     activation: Activation,
 ) -> Result<(), String> {
-    open_with_anchor(app, None, cursor, activation, FlyoutMode::Dashboard)
+    // Launches show the compact account switcher (the same surface as a tray
+    // left-click); the full dashboard stays one click away on right-click.
+    open_with_anchor(app, None, cursor, activation, FlyoutMode::Switcher)
 }
 
 fn open_with_anchor(
