@@ -222,6 +222,7 @@ fn main() {
             taskbar_meter::taskbar_meter_resize,
             taskbar_meter::taskbar_meter_drag,
             taskbar_meter::taskbar_meter_drag_end,
+            taskbar_meter::taskbar_meter_context_menu,
             commands::open_settings_window,
             commands::open_flyout_window,
             commands::close_settings_window,

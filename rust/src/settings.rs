@@ -433,6 +433,11 @@ pub struct Settings {
     #[serde(default = "default_taskbar_meter_position")]
     pub taskbar_meter_position: u16,
 
+    /// Device name of the monitor whose taskbar holds the taskbar meter.
+    /// Empty means the primary monitor.
+    #[serde(default)]
+    pub taskbar_meter_monitor: String,
+
     /// Promote the tray icon out of the Windows hidden-icons overflow area.
     /// Only has effect on Windows 11 (build ≥ 22000); silently ignored elsewhere.
     /// Defaults on so upgrades keep the icon pinned to the taskbar notification area.
@@ -760,6 +765,7 @@ impl Default for Settings {
             float_bar_detailed: false,
             taskbar_meter_enabled: false,
             taskbar_meter_position: default_taskbar_meter_position(),
+            taskbar_meter_monitor: String::new(),
             promote_tray_icon: true,
             claude_daily_routines_usage_visible: true,
             claude_allow_reading_claude_code_credentials: false,

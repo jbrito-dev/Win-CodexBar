@@ -32,6 +32,8 @@ static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
 static DRAGGING: AtomicBool = AtomicBool::new(false);
 /// Live slide position; persisted to settings when a drag ends.
 static POSITION: AtomicU16 = AtomicU16::new(250);
+/// Device name of the monitor whose taskbar holds the meter ("" = primary).
+static MONITOR: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 /// Hidden by the guard because a fullscreen app covers the monitor.
 static HIDDEN_FOR_FULLSCREEN: AtomicBool = AtomicBool::new(false);
 
@@ -143,12 +145,28 @@ pub(crate) fn slide(strip: Strip, width: i32, height: i32, current: u16, delta: 
 }
 
 /// Strip of the primary monitor (where the main taskbar lives).
-fn primary_strip(window: &tauri::WebviewWindow) -> Option<Strip> {
-    let monitor = window
+/// Monitor the user attached the meter to (by device name), else primary.
+fn target_monitor(window: &tauri::WebviewWindow) -> Option<tauri::Monitor> {
+    let wanted = MONITOR.lock().map(|name| name.clone()).unwrap_or_default();
+    if !wanted.is_empty() {
+        if let Ok(monitors) = window.available_monitors() {
+            if let Some(found) = monitors
+                .into_iter()
+                .find(|m| m.name().is_some_and(|name| *name == wanted))
+            {
+                return Some(found);
+            }
+        }
+    }
+    window
         .primary_monitor()
         .ok()
         .flatten()
-        .or_else(|| window.current_monitor().ok().flatten())?;
+        .or_else(|| window.current_monitor().ok().flatten())
+}
+
+fn primary_strip(window: &tauri::WebviewWindow) -> Option<Strip> {
+    let monitor = target_monitor(window)?;
     let pos = monitor.position();
     let size = monitor.size();
     let work = monitor.work_area();
@@ -194,10 +212,14 @@ fn redock(window: &tauri::WebviewWindow) {
 
 /// Open (or re-show) the taskbar meter.
 pub fn show(app: &AppHandle) -> Result<(), String> {
+    let settings = Settings::load();
     POSITION.store(
-        Settings::load().taskbar_meter_position.min(POSITION_MAX),
+        settings.taskbar_meter_position.min(POSITION_MAX),
         Ordering::Relaxed,
     );
+    if let Ok(mut name) = MONITOR.lock() {
+        name.clone_from(&settings.taskbar_meter_monitor);
+    }
     if let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) {
         redock(&window);
         crate::floatbar::apply_no_activate(&window);
@@ -229,6 +251,9 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
+    window.on_menu_event(|window, event| {
+        handle_menu(window.app_handle(), event.id().as_ref());
+    });
     redock(&window);
     crate::floatbar::apply_no_activate(&window);
     crate::floatbar::apply_always_on_top(&window);
@@ -352,6 +377,86 @@ pub fn taskbar_meter_drag_end() -> Result<(), String> {
         settings.save().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+const MENU_MONITOR_PREFIX: &str = "tbm_monitor:";
+const MENU_HIDE: &str = "tbm_hide";
+
+/// Right-click menu: pick the monitor whose taskbar holds the meter, or hide it.
+#[tauri::command]
+pub fn taskbar_meter_context_menu(app: AppHandle) -> Result<(), String> {
+    use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+    let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) else {
+        return Ok(());
+    };
+    let monitors = window.available_monitors().map_err(|e| e.to_string())?;
+    let primary_name = window
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .and_then(|m| m.name().cloned());
+    let current = target_monitor(&window).and_then(|m| m.name().cloned());
+    let menu = Menu::new(&app).map_err(|e| e.to_string())?;
+    let header = MenuItem::with_id(
+        &app,
+        "tbm_header",
+        "Show on taskbar of:",
+        false,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    menu.append(&header).map_err(|e| e.to_string())?;
+    for (index, monitor) in monitors.iter().enumerate() {
+        let Some(name) = monitor.name() else { continue };
+        let size = monitor.size();
+        let mut label = format!("Display {} — {}×{}", index + 1, size.width, size.height);
+        if primary_name.as_ref() == Some(name) {
+            label.push_str(" (primary)");
+        }
+        let item = CheckMenuItem::with_id(
+            &app,
+            format!("{MENU_MONITOR_PREFIX}{name}"),
+            label,
+            true,
+            current.as_ref() == Some(name),
+            None::<&str>,
+        )
+        .map_err(|e| e.to_string())?;
+        menu.append(&item).map_err(|e| e.to_string())?;
+    }
+    let separator = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    menu.append(&separator).map_err(|e| e.to_string())?;
+    let hide = MenuItem::with_id(&app, MENU_HIDE, "Hide taskbar meter", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    menu.append(&hide).map_err(|e| e.to_string())?;
+    window.popup_menu(&menu).map_err(|e| e.to_string())
+}
+
+fn handle_menu(app: &AppHandle, id: &str) {
+    if let Some(name) = id.strip_prefix(MENU_MONITOR_PREFIX) {
+        if let Ok(mut current) = MONITOR.lock() {
+            *current = name.to_string();
+        }
+        let mut settings = Settings::load();
+        settings.taskbar_meter_monitor = name.to_string();
+        if let Err(error) = settings.save() {
+            tracing::warn!("taskbar meter: saving monitor failed: {error}");
+        }
+        if let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) {
+            redock(&window);
+            crate::floatbar::apply_always_on_top(&window);
+        }
+    } else if id == MENU_HIDE {
+        let mut settings = Settings::load();
+        settings.taskbar_meter_enabled = false;
+        if let Err(error) = settings.save() {
+            tracing::warn!("taskbar meter: saving hide failed: {error}");
+        }
+        if let Err(error) = hide(app) {
+            tracing::warn!("taskbar meter: hide failed: {error}");
+        }
+        crate::events::emit_settings_changed(app);
+    }
 }
 
 #[cfg(windows)]

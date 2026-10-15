@@ -151,6 +151,10 @@ export default function TaskbarMeter({ state }: { state: BootstrapState }) {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        void invoke("taskbar_meter_context_menu").catch(() => {});
+      }}
       aria-label={t("TaskbarMeterSectionTitle")}
     >
       {visible.length === 0 ? (
