@@ -419,6 +419,58 @@ pub async fn claude_account_switch(
     refresh_after_claude_change(app).await
 }
 
+/// Tray switcher path: close every Claude Code CLI session and Claude
+/// Desktop, switch the CLI login, swap Claude Desktop's saved login to the
+/// same account, then reopen Desktop if it was running. Desktop opens signed
+/// in to the new account (or asks to sign in once if that account has no
+/// saved Desktop session yet).
+#[tauri::command]
+pub async fn claude_account_switch_and_restart(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<claude_reconciliation::ClaudeReconciliationSnapshot, String> {
+    let previous = claude_accounts_list()
+        .ok()
+        .and_then(|list| list.into_iter().find(|account| account.is_active))
+        .map(|account| account.id);
+    let stopped = tauri::async_runtime::spawn_blocking(
+        codexbar::providers::claude::accounts::desktop::stop_claude_processes,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let snapshot = claude_account_switch(app, id.clone()).await;
+    let swapped_to = if snapshot.is_ok() {
+        id
+    } else {
+        previous.clone().unwrap_or_default()
+    };
+    let from = if snapshot.is_ok() { previous } else { None };
+    let desktop_path = stopped.desktop_path.clone();
+    let swap = tauri::async_runtime::spawn_blocking(move || {
+        let mut result = Ok(false);
+        if !swapped_to.is_empty() {
+            result = codexbar::providers::claude::accounts::desktop::swap_desktop_session(
+                from.as_deref(),
+                &swapped_to,
+            );
+        }
+        if let Some(path) = desktop_path.as_deref() {
+            if let Err(error) = codexbar::providers::claude::accounts::desktop::launch_desktop(path)
+            {
+                tracing::warn!("Claude Desktop relaunch failed: {error}");
+            }
+        }
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if let Err(error) = swap {
+        tracing::warn!("Claude Desktop session swap failed: {error}");
+    }
+    snapshot
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

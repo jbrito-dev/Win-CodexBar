@@ -1,6 +1,7 @@
 //! Saved Claude Code logins. Only OAuth credentials and account identity move;
 //! projects, MCP secrets, preferences, and Claude Desktop data stay in place.
 
+pub mod desktop;
 mod login;
 
 use std::io;

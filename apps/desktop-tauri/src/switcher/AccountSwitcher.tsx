@@ -4,7 +4,7 @@ import { useLocale } from "../hooks/useLocale";
 import { useProviders } from "../hooks/useProviders";
 import { useTrayPanelLayout } from "../hooks/useTrayPanelLayout";
 import {
-  claudeAccountSwitch,
+  claudeAccountSwitchAndRestart,
   claudeAccountsList,
   codexAccountRestartDesktop,
   codexAccountSwitch,
@@ -111,7 +111,9 @@ export default function AccountSwitcher({ state }: { state: BootstrapState }) {
     setMessage(null);
     try {
       if (row.provider === "claude") {
-        await claudeAccountSwitch(row.id);
+        // Closes Claude Code CLI sessions and Claude Desktop, switches, swaps
+        // Desktop's saved login and reopens Desktop if it was running.
+        await claudeAccountSwitchAndRestart(row.id);
         setMessage({ kind: "ok", text: t("ClaudeAccountsSwitched") });
       } else {
         const result = await codexAccountSwitch(row.id);

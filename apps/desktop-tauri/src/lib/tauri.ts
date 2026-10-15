@@ -61,6 +61,9 @@ export const claudeAccountSaveCurrent = () => invoke<void>("claude_account_save_
 export const claudeAccountRemove = (id: string) => invoke<void>("claude_account_remove", { id });
 export const claudeAccountSwitch = (id: string) =>
   invoke<ClaudeReconciliationSnapshot>("claude_account_switch", { id });
+/** Switch and make Claude Code CLI sessions and Claude Desktop follow (tray switcher). */
+export const claudeAccountSwitchAndRestart = (id: string) =>
+  invoke<ClaudeReconciliationSnapshot>("claude_account_switch_and_restart", { id });
 export const grokAccountsList = () => invoke<GrokAccount[]>("grok_accounts_list");
 export const grokAccountAdd = () => invoke<void>("grok_account_add");
 export const grokAccountReauthenticate = (id: string) => invoke<void>("grok_account_reauthenticate", { id });

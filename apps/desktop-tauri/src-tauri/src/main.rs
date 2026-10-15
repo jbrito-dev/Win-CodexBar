@@ -218,6 +218,7 @@ fn main() {
             commands::end_flyout_gesture,
             commands::reveal_tray_panel_window,
             commands::get_flyout_mode,
+            commands::claude_account_switch_and_restart,
             taskbar_meter::taskbar_meter_resize,
             taskbar_meter::taskbar_meter_drag,
             taskbar_meter::taskbar_meter_drag_end,
