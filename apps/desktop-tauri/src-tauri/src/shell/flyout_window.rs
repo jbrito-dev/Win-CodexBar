@@ -18,10 +18,10 @@ use crate::surface::SurfaceMode;
 pub const FLYOUT_LABEL: &str = "flyout";
 
 /// The window paints this before the page loads and on every erase.
-const PANEL_FILL: tauri::utils::config::Color = tauri::utils::config::Color(0xDE, 0xDE, 0xE2, 0xFF);
+const PANEL_FILL: tauri::utils::config::Color = tauri::utils::config::Color(0x1E, 0x21, 0x28, 0xFF);
 /// Erase fill while the flyout shows the dark account switcher.
 const SWITCHER_FILL: tauri::utils::config::Color =
-    tauri::utils::config::Color(0x17, 0x1A, 0x21, 0xFF);
+    tauri::utils::config::Color(0x1E, 0x21, 0x28, 0xFF);
 
 /// Event the flyout webview listens to for content-mode swaps.
 pub const FLYOUT_MODE_EVENT: &str = "flyout-mode-changed";
@@ -197,7 +197,7 @@ fn open_with_anchor(
     let url = WebviewUrl::App("index.html?window=flyout".into());
 
     let builder = tauri::WebviewWindowBuilder::new(app, FLYOUT_LABEL, url)
-        .title("CodexBar")
+        .title(codexbar::brand::APP_NAME)
         .inner_size(props.width, props.height)
         .decorations(props.decorations)
         .shadow(false)

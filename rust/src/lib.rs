@@ -5,6 +5,7 @@
 
 pub mod agent_sessions;
 pub mod atomic_file;
+pub mod brand;
 pub mod browser;
 pub mod cli;
 pub mod codex_accounts;

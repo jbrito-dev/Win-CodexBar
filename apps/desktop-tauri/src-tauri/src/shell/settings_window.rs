@@ -33,7 +33,7 @@ pub fn open_or_focus(app: &tauri::AppHandle, tab: &str) -> Result<(), String> {
     // `focused(false)`: showing the window never activates it by itself;
     // `activation::apply` below decides whether it takes focus.
     let win = tauri::WebviewWindowBuilder::new(app, SETTINGS_LABEL, url)
-        .title("CodexBar Settings")
+        .title(format!("{} Settings", codexbar::brand::APP_NAME))
         .inner_size(SETTINGS_WINDOW_WIDTH, SETTINGS_WINDOW_HEIGHT)
         .min_inner_size(SETTINGS_WINDOW_MIN_WIDTH, SETTINGS_WINDOW_MIN_HEIGHT)
         .decorations(false)

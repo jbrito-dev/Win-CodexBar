@@ -231,7 +231,7 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
 
     let url = WebviewUrl::App("index.html?window=taskbarmeter".into());
     let builder = tauri::WebviewWindowBuilder::new(app, TASKBAR_METER_LABEL, url)
-        .title("CodexBar Taskbar Meter")
+        .title(format!("{} Taskbar Meter", codexbar::brand::APP_NAME))
         .inner_size(INITIAL_LOGICAL_SIZE.0, INITIAL_LOGICAL_SIZE.1)
         .decorations(false)
         .shadow(false)

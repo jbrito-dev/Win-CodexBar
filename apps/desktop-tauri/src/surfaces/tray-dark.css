@@ -1,0 +1,40 @@
+/* ── AgentBar: soft dark dashboard ─────────────────────────────────────
+ * The upstream tray dashboard is a light macOS-style panel. AgentBar shows
+ * it dark, with a muted charcoal (not black) and lower-contrast text so it
+ * is easy on the eyes. Only the --mac-* palette is overridden; layout and
+ * component styles stay upstream's. */
+html:has(.tray-panel-reveal[data-theme="dark"]),
+body:has(.tray-panel-reveal[data-theme="dark"]),
+.tray-panel-reveal[data-theme="dark"] {
+  background: #1e2128;
+}
+.tray-panel-reveal[data-theme="dark"] .menu-surface--tray {
+  --mac-panel-bg: #1e2128;
+  --mac-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --mac-panel-border: rgba(255, 255, 255, 0.08);
+  --mac-text: rgba(232, 235, 241, 0.86);
+  --mac-text-2: rgba(232, 235, 241, 0.52);
+  --mac-text-3: rgba(232, 235, 241, 0.28);
+  --mac-track: rgba(255, 255, 255, 0.08);
+  --mac-divider: rgba(255, 255, 255, 0.09);
+  --mac-separator: rgba(255, 255, 255, 0.06);
+  --mac-marker: rgba(255, 255, 255, 0.5);
+  --mac-accent: #6ea8fe;
+  --mac-selection-bg: #2f5d9a;
+  --mac-metric-card-bg: rgba(255, 255, 255, 0.04);
+  --mac-error: #f87171;
+  --mac-pace-ok: #4ade80;
+  --mac-pace-bad: #f87171;
+}
+.tray-panel-reveal[data-theme="dark"] .menu-surface--tray .provider-grid__item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+/* Upstream paints grid icons black (brightness(0)) for the light panel;
+ * on the dark panel they render light instead. */
+.tray-panel-reveal[data-theme="dark"] .menu-surface--tray .provider-grid__item .provider-icon {
+  filter: brightness(0) invert(0.88);
+}
+.tray-panel-reveal[data-theme="dark"] .menu-surface--tray .provider-grid__item--selected .provider-icon,
+.tray-panel-reveal[data-theme="dark"] .menu-surface--tray .provider-grid__item[aria-selected="true"] .provider-icon {
+  filter: brightness(0) invert(1);
+}

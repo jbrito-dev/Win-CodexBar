@@ -5,6 +5,7 @@ import "./styles.css";
 import "./surfaces/settings/settings-layout.css";
 import "./surfaces/menu-surface-layout.css";
 import "./surfaces/tray-card.css";
+import "./surfaces/tray-dark.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

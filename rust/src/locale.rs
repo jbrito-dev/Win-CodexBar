@@ -19,9 +19,11 @@ static_loader! {
 
 /// Get the localized string for a given key in the specified language
 pub fn get_text(lang: Language, key: LocaleKey) -> String {
-    LOCALES
-        .try_lookup(language_id(lang), key.name())
-        .unwrap_or_else(|| key.name().to_string())
+    crate::brand::rebrand(
+        LOCALES
+            .try_lookup(language_id(lang), key.name())
+            .unwrap_or_else(|| key.name().to_string()),
+    )
 }
 
 /// Replace `{}` placeholders in a template sequentially.

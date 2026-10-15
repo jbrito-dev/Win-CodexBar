@@ -6,13 +6,13 @@
 html:has(.switcher-reveal.tray-panel-reveal),
 body:has(.switcher-reveal.tray-panel-reveal),
 .switcher-reveal.tray-panel-reveal {
-  background: #171a21;
+  background: #1e2128;
 }
 
 .menu-surface--tray.switcher {
-  --sw-bg: #171a21;
-  --sw-card: #20242d;
-  --sw-card-hover: #272c37;
+  --sw-bg: #1e2128;
+  --sw-card: #262a33;
+  --sw-card-hover: #2d323c;
   --sw-border: rgba(255, 255, 255, 0.08);
   --sw-text: #e8eaef;
   --sw-text-2: #9aa1ae;

@@ -223,7 +223,7 @@ export function renderUsageSpendSharePng(
 
   ctx.fillStyle = "#8b9bb4";
   ctx.font = "12px system-ui,Segoe UI,sans-serif";
-  ctx.fillText("Win-CodexBar · local estimates · no account emails", pad, pad + 36);
+  ctx.fillText("AgentBar · local estimates · no account emails", pad, pad + 36);
 
   let x = pad;
   const y0 = pad + headerH;
