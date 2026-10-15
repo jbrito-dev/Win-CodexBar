@@ -23,7 +23,7 @@ const INITIAL_LOGICAL_SIZE: (f64, f64) = (260.0, 40.0);
 /// Taskbar height assumed when the taskbar auto-hides (no reserved strip).
 const AUTOHIDE_STRIP_LOGICAL: f64 = 48.0;
 /// Guard loop cadence while the meter is shown.
-const GUARD_INTERVAL: Duration = Duration::from_millis(400);
+const GUARD_INTERVAL: Duration = Duration::from_millis(150);
 /// Largest stored slide position (per mille of the available travel).
 pub const POSITION_MAX: u16 = 1000;
 
@@ -266,6 +266,7 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
 /// Close the taskbar meter.
 pub fn hide(app: &AppHandle) -> Result<(), String> {
     ACTIVE.store(false, Ordering::Release);
+    platform::forget_window();
     if let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) {
         window.close().map_err(|e| e.to_string())?;
     }
@@ -294,6 +295,21 @@ pub fn install(app: &AppHandle) {
 
 fn set_active(app: &AppHandle, active: bool) {
     ACTIVE.store(active, Ordering::Release);
+    if active {
+        // Re-raise instantly whenever Explorer reorders the taskbar (a tray
+        // click brings it to the top of the topmost band); the poll below is
+        // only the fallback.
+        if let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) {
+            platform::track_window(&window);
+        }
+        let handle = app.clone();
+        let _hooked = app.run_on_main_thread(move || {
+            let _ = &handle;
+            platform::install_zorder_hook();
+        });
+    } else {
+        platform::forget_window();
+    }
     if active && !LOOP_RUNNING.swap(true, Ordering::AcqRel) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -461,6 +477,115 @@ fn handle_menu(app: &AppHandle, id: &str) {
 
 #[cfg(windows)]
 mod platform {
+    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+
+    /// HWND of the meter while it is shown (0 when not).
+    static METER_HWND: AtomicIsize = AtomicIsize::new(0);
+    static HOOKED: AtomicBool = AtomicBool::new(false);
+
+    const EVENT_SYSTEM_FOREGROUND: u32 = 0x0003;
+    const EVENT_OBJECT_REORDER: u32 = 0x8004;
+    const WINEVENT_OUTOFCONTEXT: u32 = 0x0000;
+    const WINEVENT_SKIPOWNPROCESS: u32 = 0x0002;
+    const HWND_TOPMOST: isize = -1;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+
+    type WinEventProc = unsafe extern "system" fn(isize, u32, isize, i32, i32, u32, u32);
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SetWinEventHook(
+            event_min: u32,
+            event_max: u32,
+            module: isize,
+            callback: WinEventProc,
+            process: u32,
+            thread: u32,
+            flags: u32,
+        ) -> isize;
+        fn SetWindowPos(
+            hwnd: isize,
+            after: isize,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+
+    pub fn track_window(window: &tauri::WebviewWindow) {
+        use raw_window_handle::HasWindowHandle;
+        if let Ok(handle) = window.window_handle()
+            && let raw_window_handle::RawWindowHandle::Win32(h) = handle.as_raw()
+        {
+            METER_HWND.store(h.hwnd.get(), Ordering::Release);
+        }
+    }
+
+    pub fn forget_window() {
+        METER_HWND.store(0, Ordering::Release);
+    }
+
+    unsafe extern "system" fn on_zorder_event(
+        _hook: isize,
+        _event: u32,
+        _hwnd: isize,
+        _object: i32,
+        _child: i32,
+        _thread: u32,
+        _time: u32,
+    ) {
+        let meter = METER_HWND.load(Ordering::Acquire);
+        if meter != 0 {
+            // SAFETY: raising our own window in the topmost band; no pointers.
+            unsafe {
+                SetWindowPos(
+                    meter,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+
+    /// Install (once, on the UI thread, which pumps messages) out-of-context
+    /// hooks for foreground changes and z-order changes in other processes.
+    pub fn install_zorder_hook() {
+        if HOOKED.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let flags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
+        // SAFETY: the callback is a plain function with the WINEVENTPROC
+        // signature; hooks live for the rest of the process.
+        unsafe {
+            SetWinEventHook(
+                EVENT_SYSTEM_FOREGROUND,
+                EVENT_SYSTEM_FOREGROUND,
+                0,
+                on_zorder_event,
+                0,
+                0,
+                flags,
+            );
+            SetWinEventHook(
+                EVENT_OBJECT_REORDER,
+                EVENT_OBJECT_REORDER,
+                0,
+                on_zorder_event,
+                0,
+                0,
+                flags,
+            );
+        }
+    }
+
     #[repr(C)]
     #[derive(Default, Clone, Copy)]
     struct Rect {
@@ -543,6 +668,9 @@ mod platform {
     pub fn foreground_is_fullscreen() -> bool {
         false
     }
+    pub fn track_window(_window: &tauri::WebviewWindow) {}
+    pub fn forget_window() {}
+    pub fn install_zorder_hook() {}
 }
 
 #[cfg(test)]
