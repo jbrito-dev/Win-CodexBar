@@ -157,10 +157,14 @@ pub(super) struct RawSettings {
     merged_overview_selected_providers: Vec<String>,
     #[serde(default = "default_true")]
     quota_warning_markers_visible: bool,
+    #[serde(default = "default_true")]
+    highlight_menu_cards_on_hover: bool,
     #[serde(default)]
     workday_tick_style: Option<String>,
     #[serde(default)]
     menu_bar_color_pace: bool,
+    #[serde(default)]
+    menu_bar_pace_reserve_positive: bool,
     #[serde(default)]
     providers_sorted_alphabetically: bool,
     show_as_used: bool,
@@ -251,6 +255,8 @@ pub(super) struct RawSettings {
     global_shortcut: String,
     switcher_shortcuts: BTreeMap<String, String>,
     codex_custom_sessions_dirs: Vec<String>,
+    #[serde(default)]
+    antigravity_additional_profile_homes: Vec<String>,
     agent_sessions_enabled: bool,
     #[serde(default)]
     stay_awake_enabled: bool,
@@ -372,8 +378,10 @@ impl Default for RawSettings {
             menu_bar_icon_style: Some(s.menu_bar_icon_style.as_str().to_string()),
             merged_overview_selected_providers: s.merged_overview_selected_providers,
             quota_warning_markers_visible: s.quota_warning_markers_visible,
+            highlight_menu_cards_on_hover: s.highlight_menu_cards_on_hover,
             workday_tick_style: Some(s.workday_tick_style.as_str().to_string()),
             menu_bar_color_pace: s.menu_bar_color_pace,
+            menu_bar_pace_reserve_positive: s.menu_bar_pace_reserve_positive,
             providers_sorted_alphabetically: s.providers_sorted_alphabetically,
             show_as_used: s.show_as_used,
             enable_animations: s.enable_animations,
@@ -424,6 +432,7 @@ impl Default for RawSettings {
             global_shortcut: s.global_shortcut,
             switcher_shortcuts: s.switcher_shortcuts,
             codex_custom_sessions_dirs: s.codex_custom_sessions_dirs,
+            antigravity_additional_profile_homes: s.antigravity_additional_profile_homes,
             agent_sessions_enabled: s.agent_sessions_enabled,
             stay_awake_enabled: s.stay_awake_enabled,
             agent_session_ssh_hosts: s.agent_session_ssh_hosts,
@@ -748,12 +757,14 @@ impl From<RawSettings> for Settings {
                 raw.merged_overview_selected_providers,
             ),
             quota_warning_markers_visible: raw.quota_warning_markers_visible,
+            highlight_menu_cards_on_hover: raw.highlight_menu_cards_on_hover,
             workday_tick_style: raw
                 .workday_tick_style
                 .as_deref()
                 .and_then(WorkdayTickStyle::parse)
                 .unwrap_or_default(),
             menu_bar_color_pace: raw.menu_bar_color_pace,
+            menu_bar_pace_reserve_positive: raw.menu_bar_pace_reserve_positive,
             providers_sorted_alphabetically: raw.providers_sorted_alphabetically,
             show_as_used: raw.show_as_used,
             enable_animations: raw.enable_animations,
@@ -782,6 +793,7 @@ impl From<RawSettings> for Settings {
             global_shortcut: raw.global_shortcut,
             switcher_shortcuts: sanitize_switcher_shortcuts(raw.switcher_shortcuts),
             codex_custom_sessions_dirs: raw.codex_custom_sessions_dirs,
+            antigravity_additional_profile_homes: raw.antigravity_additional_profile_homes,
             agent_sessions_enabled: raw.agent_sessions_enabled,
             stay_awake_enabled: raw.stay_awake_enabled,
             agent_session_ssh_hosts: raw.agent_session_ssh_hosts,

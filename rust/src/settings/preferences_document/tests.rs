@@ -110,12 +110,14 @@ fn secret_settings() -> Settings {
     settings.http_proxy_username = "SECRET-PROXY-USER".to_string();
     settings.http_proxy_password = "SECRET-PROXY-PASSWORD".to_string();
     settings.codex_custom_sessions_dirs = vec!["C:\\secret\\sessions".to_string()];
+    settings.antigravity_additional_profile_homes = vec!["C:\\secret\\gemini-home".to_string()];
     settings.agent_session_ssh_hosts = vec!["secret-host.invalid".to_string()];
     settings.notification_sound_paths.high_usage = Some("C:\\secret\\ding.wav".to_string());
     settings.cost_usage_bucket_time_zone = "Asia/Tokyo".to_string();
     settings.stay_awake_enabled = true;
     settings.credential_expiry_notifications_enabled = true;
     settings.menu_bar_color_pace = true;
+    settings.menu_bar_pace_reserve_positive = true;
     settings.stacked_tray_top_provider = Some("claude".to_string());
     settings.stacked_tray_bottom_provider = Some("codex".to_string());
     settings
@@ -841,6 +843,8 @@ fn export_never_contains_secrets_or_machine_state() {
         "stacked_tray",
         "credential_expiry",
         "menu_bar_color_pace",
+        "menu_bar_pace_reserve_positive",
+        "highlight_menu_cards_on_hover",
     ] {
         assert!(!text.contains(secret), "export leaked `{secret}`");
     }

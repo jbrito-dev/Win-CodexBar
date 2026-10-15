@@ -12,6 +12,8 @@ use crate::codex_costs::codex_period_start;
 use crate::core::{CostUsageDayRange, CostUsagePricing, JsonlScanner, sha256_hex};
 
 use super::freshness::is_reusable;
+use super::project_names::apply_saved_project_names;
+use super::projectless::apply_projectless_chats;
 use super::sidecar::{SidecarError, WorkspaceUsageSidecar};
 use super::thread_names::apply_session_names_and_ranking;
 use super::types::{
@@ -152,11 +154,18 @@ impl CodexWorkspacesIndex {
             match sidecar.load_latest_snapshot(scope.scope_signature(), self.history_days) {
                 Ok(Some(mut cached)) if is_reusable(cached.updated_at, now, &zone) => {
                     cached.source_status = source_status;
+                    let sqlite_env = non_empty_env("CODEX_SQLITE_HOME");
                     apply_session_names_and_ranking(
                         &mut cached,
                         &scope.codex_home,
-                        non_empty_env("CODEX_SQLITE_HOME").as_deref(),
+                        sqlite_env.as_deref(),
                     );
+                    apply_saved_project_names(
+                        &mut cached,
+                        &scope.codex_home,
+                        sqlite_env.as_deref(),
+                    );
+                    apply_projectless_chats(&mut cached, &scope.codex_home, sqlite_env.as_deref());
                     return Ok(cached);
                 }
                 Ok(_) => {}
@@ -246,11 +255,7 @@ impl CodexWorkspacesIndex {
         }
 
         let mut projects = build_projects(&session_buckets);
-        projects.sort_by(|a, b| {
-            b.latest_activity
-                .cmp(&a.latest_activity)
-                .then_with(|| a.display_name.cmp(&b.display_name))
-        });
+        sort_projects(&mut projects);
 
         let mut total = UsageTotals::default();
         for p in &projects {
@@ -290,11 +295,10 @@ impl CodexWorkspacesIndex {
             daily,
             source_status,
         };
-        apply_session_names_and_ranking(
-            &mut snapshot,
-            &scope.codex_home,
-            non_empty_env("CODEX_SQLITE_HOME").as_deref(),
-        );
+        let sqlite_env = non_empty_env("CODEX_SQLITE_HOME");
+        apply_session_names_and_ranking(&mut snapshot, &scope.codex_home, sqlite_env.as_deref());
+        apply_saved_project_names(&mut snapshot, &scope.codex_home, sqlite_env.as_deref());
+        apply_projectless_chats(&mut snapshot, &scope.codex_home, sqlite_env.as_deref());
 
         progress(Progress::phase(ProgressPhase::Saving));
         sidecar.publish_snapshot(&snapshot)?;
@@ -414,6 +418,18 @@ struct DailyAcc {
     unknown_tokens: u64,
 }
 
+/// Project order: latest activity first, then display name, then id.
+/// The id tie-break keeps same-named projects (and their privacy numbers) in
+/// one order across scans; projects are built from a `HashMap`.
+pub(super) fn sort_projects(projects: &mut [ProjectUsage]) {
+    projects.sort_by(|a, b| {
+        b.latest_activity
+            .cmp(&a.latest_activity)
+            .then_with(|| a.display_name.cmp(&b.display_name))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
 fn build_projects(sessions: &HashMap<String, SessionBucket>) -> Vec<ProjectUsage> {
     let mut by_project: HashMap<String, Vec<&SessionBucket>> = HashMap::new();
     for session in sessions.values() {
@@ -459,6 +475,7 @@ fn build_projects(sessions: &HashMap<String, SessionBucket>) -> Vec<ProjectUsage
                 latest_activity: latest,
                 top_model,
                 top_sessions: Vec::new(),
+                is_projectless: false,
             }
         })
         .collect()
@@ -1050,14 +1067,110 @@ mod tests {
                     cost_estimate: CostEstimate::default(),
                     top_model: Some("gpt-5".into()),
                 }],
+                is_projectless: false,
             }],
             daily: vec![],
             source_status: SourceStatus::Complete,
         };
         snap.redact_for_privacy();
-        assert_eq!(snap.projects[0].display_name, "Workspace");
+        assert_eq!(snap.projects[0].display_name, "Workspace #1");
         assert!(snap.projects[0].path.is_none());
         assert_eq!(snap.projects[0].top_sessions[0].display_title, "Session s1");
         assert!(snap.projects[0].top_sessions[0].cwd.is_none());
+    }
+
+    #[test]
+    fn same_named_projects_with_equal_activity_sort_the_same_on_every_scan() {
+        let project = |id: &str| ProjectUsage {
+            id: id.into(),
+            display_name: "app".into(),
+            path: Some(format!("/work/{id}/app")),
+            totals: UsageTotals::from_parts(10, 0, 5),
+            cost_estimate: CostEstimate::default(),
+            session_count: 1,
+            latest_activity: None,
+            top_model: None,
+            top_sessions: Vec::new(),
+            is_projectless: false,
+        };
+        let ids = |projects: &[ProjectUsage]| -> Vec<String> {
+            projects.iter().map(|p| p.id.clone()).collect()
+        };
+        let mut forward = vec![project("project-a"), project("project-b")];
+        let mut reverse = vec![project("project-b"), project("project-a")];
+        sort_projects(&mut forward);
+        sort_projects(&mut reverse);
+        assert_eq!(ids(&forward), ["project-a", "project-b"]);
+        assert_eq!(ids(&reverse), ids(&forward));
+    }
+
+    #[test]
+    fn saved_project_names_apply_to_fresh_and_cached_loads() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path().join("codex");
+        let sessions = home.join("sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let day = Local::now().date_naive().format("%Y-%m-%d").to_string();
+        let project = tmp.path().join("proj-a");
+        fs::create_dir_all(&project).unwrap();
+        write_session(
+            &sessions,
+            &day,
+            "sess-aaa.jsonl",
+            &project.to_string_lossy(),
+            "gpt-5",
+            1000,
+            500,
+        );
+        // Root as Codex stores it: the canonical path of the project folder.
+        let root = fs::canonicalize(&project)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let database = home.join("state_5.sqlite");
+        {
+            let conn = Connection::open(&database).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT);
+                 CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT);
+                 CREATE TABLE project_roots (project_id TEXT, path TEXT);",
+            )
+            .unwrap();
+            conn.execute("INSERT INTO projects VALUES ('p', 'Saved Name')", [])
+                .unwrap();
+            conn.execute(
+                "INSERT INTO project_roots VALUES ('p', ?1)",
+                [root.as_str()],
+            )
+            .unwrap();
+        }
+
+        let index = CodexWorkspacesIndex::new(30)
+            .with_codex_home(&home)
+            .with_sidecar_path(tmp.path().join("sidecar.sqlite"));
+        let fresh = index.load_snapshot(true, |_| {}).unwrap();
+        assert_eq!(fresh.projects[0].display_name, "Saved Name");
+        assert_eq!(fresh.total.input_tokens, 1000);
+
+        // Cached loads re-read the names; the sidecar copy is not authoritative.
+        let cached = index.load_snapshot(false, |_| {}).unwrap();
+        assert_eq!(cached.projects[0].display_name, "Saved Name");
+        assert_eq!(cached.total, fresh.total);
+
+        {
+            let conn = Connection::open(&database).unwrap();
+            conn.execute("UPDATE projects SET name = 'Renamed' WHERE id = 'p'", [])
+                .unwrap();
+        }
+        let renamed = index.load_snapshot(false, |_| {}).unwrap();
+        assert_eq!(renamed.projects[0].display_name, "Renamed");
+
+        {
+            let conn = Connection::open(&database).unwrap();
+            conn.execute("DELETE FROM project_roots", []).unwrap();
+        }
+        let unnamed = index.load_snapshot(false, |_| {}).unwrap();
+        assert_eq!(unnamed.projects[0].display_name, "proj-a");
+        assert_eq!(unnamed.total, fresh.total);
     }
 }

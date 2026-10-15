@@ -19,6 +19,7 @@ const detail = (id: string) => ({
 
 function settings(extra: Partial<OptionSettings> = {}): OptionSettings {
   return {
+    antigravityAdditionalProfileHomes: [],
     codexOpenaiWebExtras: undefined,
     codexHistoricalTracking: false,
     codexExternalOauthSourcesAllowed: false,
@@ -38,6 +39,34 @@ function toggle(label: string) {
 }
 
 describe("OptionsSection", () => {
+  it("shows the Antigravity profile-folder list only for Antigravity", () => {
+    const { unmount } = render(
+      <OptionsSection
+        detail={detail("antigravity")}
+        settings={settings({ antigravityAdditionalProfileHomes: ["D:/gemini-work"] })}
+        disabled={false}
+        t={t}
+        onSettingsChange={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("AntigravityProfileHomesLabel")).toBeTruthy();
+    expect(screen.getByText("D:/gemini-work")).toBeTruthy();
+    unmount();
+
+    render(
+      <OptionsSection
+        detail={detail("gemini")}
+        settings={settings()}
+        disabled={false}
+        t={t}
+        onSettingsChange={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("AntigravityProfileHomesLabel")).toBeNull();
+  });
+
   it("lists the Codex options with web extras on by default and marks unused ones", () => {
     render(
       <OptionsSection

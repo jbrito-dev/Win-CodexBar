@@ -96,6 +96,18 @@ export default function MenuBarTab({
             onChange={(v) => set({ menuBarColorPace: v })}
           />
         </Field>
+        <Field label={t("PaceSignLabel")} description={t("PaceSignHelper")}>
+          <Select
+            variant="menu"
+            value={settings.menuBarPaceReservePositive ? "reserve" : "ahead"}
+            disabled={saving}
+            options={[
+              { value: "ahead", label: t("PaceSignAheadPositive") },
+              { value: "reserve", label: t("PaceSignReservePositive") },
+            ]}
+            onChange={(v) => set({ menuBarPaceReservePositive: v === "reserve" })}
+          />
+        </Field>
         <Field
           label={t("PromoteTrayIconLabel")}
           description={pinSupported ? t("PromoteTrayIconHelper") : t("PromoteTrayIconUnsupportedHint")}

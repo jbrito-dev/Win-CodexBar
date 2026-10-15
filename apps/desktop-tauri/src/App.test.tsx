@@ -96,6 +96,7 @@ function settings(overrides: Partial<SettingsSnapshot> = {}): SettingsSnapshot {
     quotaWarningMarkersVisible: true,
     workdayTickStyle: "subtle",
     menuBarColorPace: false,
+    menuBarPaceReservePositive: false,
     providersSortedAlphabetically: false,
     showAsUsed: true,
     showAllTokenAccountsInMenu: false,
@@ -111,6 +112,7 @@ function settings(overrides: Partial<SettingsSnapshot> = {}): SettingsSnapshot {
     globalShortcut: "Ctrl+Shift+U",
     switcherShortcuts: {},
     codexCustomSessionsDirs: [],
+    antigravityAdditionalProfileHomes: [],
     uiLanguage: "english",
     uiLanguageFollowsSystem: false,
     // "dark" (not "auto") so useTheme's effect short-circuits before ever

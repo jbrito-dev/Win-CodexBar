@@ -10,7 +10,10 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::core::{NamedRateWindow, ProviderError, ProviderFetchResult, RateWindow, UsageSnapshot};
+use crate::core::{
+    NamedRateWindow, ProviderDisplayDetail, ProviderError, ProviderFetchResult, RateWindow,
+    UsageSnapshot,
+};
 
 mod credentials_store;
 mod profile;
@@ -121,8 +124,24 @@ pub struct OAuthUsageResponse {
     #[serde(rename = "extraUsage", alias = "extra_usage")]
     pub extra_usage: Option<ExtraUsage>,
 
+    /// Promotional cloud-credits block. Display-only: read by `cloud_credits`,
+    /// never by the quota windows.
+    #[serde(default)]
+    pub iguana_necktie: Option<serde_json::Value>,
+
     #[serde(default)]
     limits: Vec<super::scoped_weekly::ScopedWeeklyLimit>,
+}
+
+/// Display row for the promotional cloud-credits block, when present and valid.
+fn cloud_credits_row(
+    response: &OAuthUsageResponse,
+    now: DateTime<Utc>,
+) -> Option<ProviderDisplayDetail> {
+    response
+        .iguana_necktie
+        .as_ref()
+        .and_then(|block| super::cloud_credits::detail_from_block(block, now))
 }
 
 /// A usage window from the OAuth API
@@ -422,7 +441,8 @@ impl ClaudeOAuthFetcher {
         {
             usage = usage.with_email(email);
         }
-        let mut result = ProviderFetchResult::new(usage, "oauth");
+        let mut result = ProviderFetchResult::new(usage, "oauth")
+            .with_display_detail(cloud_credits_row(&usage_response, Utc::now()));
         if let Some(identity) = credential_identity(&credentials) {
             result = result.with_account_identity(identity);
         }

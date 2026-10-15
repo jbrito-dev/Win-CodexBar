@@ -198,6 +198,11 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub quota_warning_markers_visible: bool,
 
+    /// Tray panel Refresh row highlights under the pointer. Keyboard focus
+    /// stays highlighted either way.
+    #[serde(default = "default_true")]
+    pub highlight_menu_cards_on_hover: bool,
+
     /// How workday boundaries appear on weekly usage bars.
     #[serde(default)]
     pub workday_tick_style: WorkdayTickStyle,
@@ -205,6 +210,12 @@ pub struct Settings {
     /// Colour the Windows tray usage indicator by pace when enabled.
     #[serde(default)]
     pub menu_bar_color_pace: bool,
+
+    /// Show reserve as `+` and deficit as `-` in signed pace text (upstream
+    /// `menuBarPaceReservePositive`). Display only: the stored pace delta stays
+    /// usage-ahead, so pace colours and stages keep their meaning.
+    #[serde(default)]
+    pub menu_bar_pace_reserve_positive: bool,
 
     /// Settings sidebar lists providers alphabetically (enabled first)
     /// instead of in `provider_order`. Display only; never rewrites the order.
@@ -299,6 +310,12 @@ pub struct Settings {
     /// Additional Codex home or sessions directories to include in local cost scans.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub codex_custom_sessions_dirs: Vec<String>,
+
+    /// Extra Gemini home directories (each one's `.gemini`) whose Antigravity
+    /// local token history is combined with the primary home. Empty keeps the
+    /// single-home default. Affects local history only, not sign-in or quotas.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub antigravity_additional_profile_homes: Vec<String>,
 
     /// Discover local and configured SSH Codex/Claude sessions.
     #[serde(default)]
@@ -711,8 +728,10 @@ impl Default for Settings {
             menu_bar_icon_style: MenuBarIconStyle::Bars,
             merged_overview_selected_providers: Vec::new(),
             quota_warning_markers_visible: true,
+            highlight_menu_cards_on_hover: true,
             workday_tick_style: WorkdayTickStyle::Subtle,
             menu_bar_color_pace: false,
+            menu_bar_pace_reserve_positive: false,
             providers_sorted_alphabetically: false,
             show_as_used: false,
             enable_animations: true,   // Animations enabled by default
@@ -735,6 +754,7 @@ impl Default for Settings {
             global_shortcut: default_global_shortcut(), // Ctrl+Shift+U by default
             switcher_shortcuts: BTreeMap::new(),
             codex_custom_sessions_dirs: Vec::new(),
+            antigravity_additional_profile_homes: Vec::new(),
             agent_sessions_enabled: false,
             stay_awake_enabled: false,
             agent_session_ssh_hosts: Vec::new(),
