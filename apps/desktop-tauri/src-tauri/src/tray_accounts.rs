@@ -125,6 +125,7 @@ pub(crate) fn handle_action(app: &AppHandle, action: AccountMenuAction) {
                                     crate::commands::codex_account_restart_desktop(
                                         handle.clone(),
                                         result.switch_id.to_string(),
+                                        None,
                                     )
                                     .await;
                                 if let Err(error) = restart_result {
