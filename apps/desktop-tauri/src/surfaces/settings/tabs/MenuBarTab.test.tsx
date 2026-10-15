@@ -63,6 +63,7 @@ describe("MenuBarTab layout", () => {
     expect(fieldLabels(screen.getByRole("region", { name: "MenuBarIconSectionTitle" }))).toEqual([
       "MenuBarIconStyleLabel",
       "ColorPaceInTray",
+      "PaceSignLabel",
       "PromoteTrayIconLabel",
     ]);
     expect(fieldLabels(screen.getByRole("region", { name: "CombinedIconSectionTitle" }))).toEqual([
@@ -107,6 +108,25 @@ describe("MenuBarTab Icon section", () => {
     const { set } = renderTab();
     fireEvent.click(screen.getByRole("checkbox", { name: "ColorPaceInTray" }));
     expect(set).toHaveBeenCalledWith({ menuBarColorPace: true });
+  });
+
+  it("saves the Pace sign with ahead-of-pace positive as the default", () => {
+    const { set } = renderTab();
+    const paceSign = select("PaceSignLabel");
+    expect(paceSign.value).toBe("ahead");
+    expect(Array.from(paceSign.options, (o) => o.textContent)).toEqual([
+      "PaceSignAheadPositive",
+      "PaceSignReservePositive",
+    ]);
+    fireEvent.change(paceSign, { target: { value: "reserve" } });
+    expect(set).toHaveBeenCalledWith({ menuBarPaceReservePositive: true });
+  });
+
+  it("shows a saved reserve-positive Pace sign and switches back", () => {
+    const { set } = renderTab({ menuBarPaceReservePositive: true });
+    expect(select("PaceSignLabel").value).toBe("reserve");
+    fireEvent.change(select("PaceSignLabel"), { target: { value: "ahead" } });
+    expect(set).toHaveBeenCalledWith({ menuBarPaceReservePositive: false });
   });
 });
 

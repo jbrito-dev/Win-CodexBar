@@ -9,9 +9,11 @@ import { Field, SettingsGroup, Toggle } from "../../../../components/FormControl
 import { AutoResumeSection } from "./AutoResumeSection";
 import { OptionalDetailsSection } from "./OptionalDetailsSection";
 import { ClaudeSwapPathField } from "./credentials/ClaudeSwapPathField";
+import { AntigravityProfileHomesField } from "./AntigravityProfileHomesField";
 
 export type OptionSettings = Pick<
   SettingsSnapshot,
+  | "antigravityAdditionalProfileHomes"
   | "codexOpenaiWebExtras"
   | "codexHistoricalTracking"
   | "codexExternalOauthSourcesAllowed"
@@ -190,6 +192,14 @@ export function OptionsSection({
           )}
         </Fragment>
       ))}
+      {detail.id === "antigravity" && (
+        <AntigravityProfileHomesField
+          value={settings.antigravityAdditionalProfileHomes}
+          disabled={disabled}
+          t={t}
+          onSettingsChange={onSettingsChange}
+        />
+      )}
       <AutoResumeSection
         providerId={detail.id}
         enabled={detail.autoResumeAfterQuotaReset}

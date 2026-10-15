@@ -391,6 +391,7 @@ export function ProviderDetailPane({
         <CostSection cost={detail.cost} t={t} />
         <UsageDetailsSection
           provider={liveSnapshot?.providerId === detail.id ? liveSnapshot : null}
+          paceReservePositive={settings.menuBarPaceReservePositive ?? false}
         />
         <ChartsSection
           providerId={detail.id}

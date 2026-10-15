@@ -5,10 +5,12 @@ use reqwest::{Client, StatusCode, header};
 use serde::Deserialize;
 
 use crate::core::{
-    CostSnapshot, NamedRateWindow, ProviderError, ProviderFetchResult, RateWindow, UsageSnapshot,
+    CostSnapshot, NamedRateWindow, ProviderDisplayDetail, ProviderError, ProviderFetchResult,
+    RateWindow, UsageSnapshot,
 };
 
 use super::CLOUDFLARE_CHALLENGE_MESSAGE;
+use super::cloud_credits;
 use super::reset_credits;
 
 const CLOUDFLARE_BODY_PREFIX_BYTES: usize = 64 * 1024;
@@ -152,6 +154,17 @@ struct UsageResponse {
     /// Raw limit-reset block; decoded leniently by `reset_credits` so an
     /// unreadable block never fails the usage windows.
     cedar_ember: Option<serde_json::Value>,
+    /// Raw promotional cloud-credits block; decoded leniently by
+    /// `cloud_credits`. Display-only, never read by the quota windows.
+    iguana_necktie: Option<serde_json::Value>,
+}
+
+/// Display row for the promotional cloud-credits block, when present and valid.
+fn cloud_credits_row(usage: &UsageResponse, now: DateTime<Utc>) -> Option<ProviderDisplayDetail> {
+    usage
+        .iguana_necktie
+        .as_ref()
+        .and_then(|block| cloud_credits::detail_from_block(block, now))
 }
 
 impl<'de> Deserialize<'de> for UsageResponse {
@@ -228,6 +241,7 @@ impl<'de> Deserialize<'de> for UsageResponse {
                 .transpose()
                 .map_err(serde::de::Error::custom)?,
             cedar_ember: map.remove("cedar_ember"),
+            iguana_necktie: map.remove("iguana_necktie"),
         })
     }
 }
@@ -410,7 +424,8 @@ impl ClaudeWebApiFetcher {
             }
         }
 
-        let mut result = ProviderFetchResult::new(snapshot, "web");
+        let mut result = ProviderFetchResult::new(snapshot, "web")
+            .with_display_detail(cloud_credits_row(&usage, Utc::now()));
 
         // Web-only, display-only limit-reset inventory (never persisted).
         if let Some(item) = usage
@@ -1187,6 +1202,40 @@ mod tests {
 
         assert!((design.used_percent - 31.0).abs() < f64::EPSILON);
         assert!((routines.used_percent - 19.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn web_cloud_credits_block_becomes_display_row_and_leaves_windows_alone() {
+        let usage: super::UsageResponse = serde_json::from_str(
+            r#"{
+                "five_hour": { "utilization": 10.0 },
+                "iguana_necktie": {
+                    "limit_dollars": 20.0,
+                    "used_dollars": 8.0,
+                    "remaining_dollars": 12.0,
+                    "resets_at": "2099-01-01T00:00:00Z"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let row = super::cloud_credits_row(&usage, chrono::Utc::now()).expect("cloud credits row");
+        assert_eq!(row.title(), "Cloud credits");
+        assert_eq!(row.value(), "$12.00 of $20.00 remaining");
+        assert_eq!(row.secondary_value(), Some("Expires 2099-01-01"));
+        assert!(usage.extra_usage.is_none());
+        assert!(usage.seven_day.is_none());
+    }
+
+    #[test]
+    fn web_response_without_valid_cloud_credits_yields_no_row() {
+        let absent: super::UsageResponse =
+            serde_json::from_str(r#"{"five_hour": {"utilization": 1.0}}"#).unwrap();
+        assert!(super::cloud_credits_row(&absent, chrono::Utc::now()).is_none());
+
+        let malformed: super::UsageResponse =
+            serde_json::from_str(r#"{"iguana_necktie": {"remaining_dollars": 5.0}}"#).unwrap();
+        assert!(super::cloud_credits_row(&malformed, chrono::Utc::now()).is_none());
     }
 
     #[test]

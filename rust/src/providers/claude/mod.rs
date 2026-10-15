@@ -6,6 +6,7 @@ mod auto_precision;
 pub mod claude_swap;
 mod cli_reset;
 mod cli_screen;
+mod cloud_credits;
 mod oauth;
 pub mod quota_history;
 mod reset_credits;
@@ -492,14 +493,16 @@ fn javascript_hash_base36(text: &str) -> String {
 /// Arguments shared by every Claude CLI `/usage` probe.
 ///
 /// The remote-control startup hook can otherwise change the interactive
-/// session before the usage command is collected. Keep this override in one
-/// helper so future CLI probe paths cannot silently omit it.
+/// session before the usage command is collected. `disableAllHooks` stops the
+/// user's SessionStart hooks (git syncs, ssh, and so on) from running on every
+/// poll. Keep this override in one helper so future CLI probe paths cannot
+/// silently omit it.
 fn claude_usage_settings_args() -> [String; 2] {
     [
         "--settings".to_string(),
         // Issue #778 (Claude Code 2.1.293): `tui: default` stops the "Try the new
         // fullscreen renderer?" offer. Older builds ignore unknown settings keys.
-        r#"{"remoteControlAtStartup":false,"tui":"default"}"#.to_string(),
+        r#"{"remoteControlAtStartup":false,"disableAllHooks":true,"tui":"default"}"#.to_string(),
     ]
 }
 
@@ -509,6 +512,9 @@ fn claude_probe_launch_args(session_id: &str) -> Vec<String> {
         "user".to_string(),
         "--allowed-tools".to_string(),
         String::new(),
+        // The probe never calls MCP tools, so ignore ambient MCP servers
+        // instead of waiting for unrelated user servers to initialize.
+        "--strict-mcp-config".to_string(),
     ];
     args.extend(claude_usage_settings_args());
     args.extend(["--session-id".to_string(), session_id.to_string()]);
@@ -725,6 +731,9 @@ async fn run_claude_pty_probe(
                 .with_script_line_delay(probe.script_line_delay_secs)
                 .with_working_directory(working_directory.clone())
                 .with_extra_args(claude_probe_launch_args(&session_id));
+            // Match the replay screen: rows scrolled off a shorter PTY are
+            // missing from the replayed panel (see `cli_screen::ROWS`).
+            options.rows = u16::try_from(cli_screen::ROWS).expect("Claude PTY rows fit in u16");
             if let Some(idle) = probe.idle_timeout_secs {
                 options = options.with_idle_timeout(idle);
             }
@@ -1062,7 +1071,10 @@ impl ClaudeProvider {
 
     /// Parse Claude CLI /usage output
     fn parse_cli_output(&self, output: &str) -> Result<ProviderFetchResult, ProviderError> {
-        let clean = cli_screen::render(output, true);
+        let rendered = cli_screen::render(output, true);
+        // Insights carry arbitrary tool names and usage shares, never quota or
+        // account fields, so nothing below the heading may feed the parsers.
+        let (clean, has_insights) = split_usage_insights(rendered);
         let clean_lower = clean.to_lowercase();
 
         if clean.trim().is_empty() {
@@ -1119,9 +1131,12 @@ impl ClaudeProvider {
             && weekly_percent.is_none()
             && !is_exhausted_short_form(&clean_lower)
         {
-            return Err(ProviderError::Parse(
-                "Claude CLI did not return usage data".to_string(),
-            ));
+            let message = if has_insights {
+                "Claude CLI /usage returned usage insights without quota data."
+            } else {
+                "Claude CLI did not return usage data"
+            };
+            return Err(ProviderError::Parse(message.to_string()));
         }
 
         // Extract identity info
@@ -1439,6 +1454,23 @@ fn is_workspace_trust_prompt(text: &str) -> bool {
     text.contains("quick safety check")
         && text.contains("trust this folder")
         && text.contains("yes, i trust this folder")
+}
+
+/// Heading of the usage-insights list that follows the quota rows in Claude
+/// Code 2.1.294+ `/usage` panels (lowercased for ASCII-insensitive matching).
+const USAGE_INSIGHTS_HEADING: &str = "what's contributing to your limits usage?";
+
+/// Split a rendered `/usage` screen before its insights heading. Returns the
+/// quota text and whether an insights list was present. ASCII lowercasing
+/// keeps byte offsets aligned with `rendered`.
+fn split_usage_insights(mut rendered: String) -> (String, bool) {
+    match rendered.to_ascii_lowercase().find(USAGE_INSIGHTS_HEADING) {
+        Some(index) => {
+            rendered.truncate(index);
+            (rendered, true)
+        }
+        None => (rendered, false),
+    }
 }
 
 /// Current `/usage` panels show a local session summary above the plan limits,
@@ -1806,6 +1838,7 @@ mod tests {
             serde_json::from_str(&claude_usage_settings_args()[1]).unwrap();
         assert_eq!(settings["tui"], "default");
         assert_eq!(settings["remoteControlAtStartup"], false);
+        assert_eq!(settings["disableAllHooks"], true);
     }
 
     #[test]
@@ -1819,22 +1852,29 @@ mod tests {
         // Positional structure only: the settings pair is pinned once by
         // `claude_usage_settings_args` being the sole composer.
         assert_eq!(
-            args[..4],
-            ["--setting-sources", "user", "--allowed-tools", ""]
+            args[..5],
+            [
+                "--setting-sources",
+                "user",
+                "--allowed-tools",
+                "",
+                "--strict-mcp-config"
+            ]
         );
-        assert_eq!(args[4], claude_usage_settings_args()[0]);
-        assert_eq!(args[5], claude_usage_settings_args()[1]);
-        assert_eq!(args[6], "--session-id");
-        assert_eq!(args[7], first);
+        assert_eq!(args[5], claude_usage_settings_args()[0]);
+        assert_eq!(args[6], claude_usage_settings_args()[1]);
+        assert_eq!(args[7], "--session-id");
+        assert_eq!(args[8], first);
     }
 
     #[test]
-    fn usage_probe_settings_disable_remote_control_startup() {
+    fn usage_probe_settings_disable_remote_control_startup_and_user_hooks() {
         assert_eq!(
             claude_usage_settings_args(),
             [
                 "--settings".to_string(),
-                r#"{"remoteControlAtStartup":false,"tui":"default"}"#.to_string(),
+                r#"{"remoteControlAtStartup":false,"disableAllHooks":true,"tui":"default"}"#
+                    .to_string(),
             ]
         );
     }
@@ -2206,6 +2246,45 @@ Resets Dec 24 at 3:59pm (Europe/Paris)
         assert_eq!(
             err.to_string(),
             "Parse error: Claude CLI did not return usage data"
+        );
+    }
+
+    /// Insights footer as Claude Code 2.1.294 prints it below the quota rows.
+    const USAGE_INSIGHTS: &str = "What's contributing to your limits usage?\n\
+        Approximate, based on local sessions on this machine.\n\
+        Last 24h · 100 requests · 2 sessions\n\
+        30% of your usage was at >150k context\n\
+        Top MCP servers: Claude Browser 10%, claude-in-chrome 5%\n\
+        Last 7d · 1000 requests · 20 sessions\n\
+        Top skills: Claude Max 20%";
+
+    #[test]
+    fn usage_insights_footer_cannot_set_identity_or_quota() {
+        let text = format!(
+            "Current session\n13% used\nResets 2:20pm (Asia/Singapore)\n\
+             Current week (all models)\n2% used\nResets Oct 3 at 8am (Asia/Singapore)\n{USAGE_INSIGHTS}"
+        );
+        let usage = ClaudeProvider::new().parse_cli_output(&text).unwrap().usage;
+        assert_eq!(usage.primary.used_percent, 13.0);
+        assert_eq!(
+            usage.primary.reset_description.as_deref(),
+            Some("Resets 2:20pm (Asia/Singapore)")
+        );
+        assert_eq!(usage.secondary.map(|w| w.used_percent), Some(2.0));
+        assert_eq!(usage.login_method.as_deref(), Some("Claude (CLI)"));
+    }
+
+    #[test]
+    fn usage_insights_without_quota_are_not_read_as_limits() {
+        let text = format!(
+            "You are currently using your subscription to power your Claude Code usage\n{USAGE_INSIGHTS}"
+        );
+        let error = ClaudeProvider::new().parse_cli_output(&text).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("returned usage insights without quota data"),
+            "{error}"
         );
     }
 

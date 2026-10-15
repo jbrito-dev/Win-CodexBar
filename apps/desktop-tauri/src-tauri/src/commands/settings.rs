@@ -41,8 +41,10 @@ pub struct SettingsUpdate {
     pub menu_bar_icon_style: Option<codexbar::settings::MenuBarIconStyle>,
     pub merged_overview_selected_providers: Option<Vec<String>>,
     pub quota_warning_markers_visible: Option<bool>,
+    pub highlight_menu_cards_on_hover: Option<bool>,
     pub workday_tick_style: Option<codexbar::settings::WorkdayTickStyle>,
     pub menu_bar_color_pace: Option<bool>,
+    pub menu_bar_pace_reserve_positive: Option<bool>,
     pub providers_sorted_alphabetically: Option<bool>,
     pub show_as_used: Option<bool>,
     pub show_all_token_accounts_in_menu: Option<bool>,
@@ -59,6 +61,8 @@ pub struct SettingsUpdate {
     /// Provider-switcher shortcut overrides; replaces the stored overrides.
     pub switcher_shortcuts: Option<std::collections::BTreeMap<String, String>>,
     pub codex_custom_sessions_dirs: Option<Vec<String>>,
+    /// Extra Gemini profile homes scanned for Antigravity local history.
+    pub antigravity_additional_profile_homes: Option<Vec<String>>,
     pub agent_sessions_enabled: Option<bool>,
     pub stay_awake_enabled: Option<bool>,
     pub agent_session_ssh_hosts: Option<Vec<String>>,
@@ -385,11 +389,17 @@ impl SettingsUpdate {
         if let Some(v) = self.quota_warning_markers_visible {
             settings.quota_warning_markers_visible = v;
         }
+        if let Some(v) = self.highlight_menu_cards_on_hover {
+            settings.highlight_menu_cards_on_hover = v;
+        }
         if let Some(v) = self.workday_tick_style {
             settings.workday_tick_style = v;
         }
         if let Some(v) = self.menu_bar_color_pace {
             settings.menu_bar_color_pace = v;
+        }
+        if let Some(v) = self.menu_bar_pace_reserve_positive {
+            settings.menu_bar_pace_reserve_positive = v;
         }
         if let Some(v) = self.providers_sorted_alphabetically {
             settings.providers_sorted_alphabetically = v;
@@ -467,6 +477,9 @@ impl SettingsUpdate {
         }
         if let Some(v) = self.codex_custom_sessions_dirs.clone() {
             settings.codex_custom_sessions_dirs = normalize_custom_sessions_dirs(v);
+        }
+        if let Some(v) = self.antigravity_additional_profile_homes.clone() {
+            settings.antigravity_additional_profile_homes = normalize_custom_sessions_dirs(v);
         }
         if let Some(v) = self.agent_sessions_enabled {
             settings.agent_sessions_enabled = v;
@@ -722,6 +735,7 @@ pub async fn update_settings(
     let notify_float_bar = patch.notifies_float_bar();
     let refresh_provider_data = patch.refreshes_provider_data();
     let clear_local_usage_cache = patch.codex_custom_sessions_dirs.is_some()
+        || patch.antigravity_additional_profile_homes.is_some()
         || patch.cost_reporting_period.is_some()
         || patch.cost_usage_enabled.is_some();
     let rebuild_tray_menu = patch.rebuilds_tray_menu();
@@ -1143,6 +1157,24 @@ mod tests {
     }
 
     #[test]
+    fn apply_display_settings_updates_pace_sign() {
+        let mut settings = Settings::default();
+        assert!(!settings.menu_bar_pace_reserve_positive);
+
+        let update: SettingsUpdate =
+            serde_json::from_str(r#"{"menuBarPaceReservePositive":true}"#).unwrap();
+        update.apply_display_settings(&mut settings);
+        assert!(settings.menu_bar_pace_reserve_positive);
+
+        SettingsUpdate {
+            menu_bar_pace_reserve_positive: Some(false),
+            ..Default::default()
+        }
+        .apply_display_settings(&mut settings);
+        assert!(!settings.menu_bar_pace_reserve_positive);
+    }
+
+    #[test]
     fn menu_bar_icon_style_update_repaints_tray_and_mirrors_legacy_flag() {
         let mut settings = Settings::default();
         let update: SettingsUpdate =
@@ -1170,6 +1202,7 @@ mod tests {
         let mut settings = Settings::default();
         let update: SettingsUpdate = serde_json::from_str(
             r#"{"quotaWarningMarkersVisible":false,"workdayTickStyle":"high_contrast",
+                "highlightMenuCardsOnHover":false,
                 "mergedOverviewSelectedProviders":["claude","Codex","claude","gemini","cursor","copilot","zai","kimi"],
                 "weeklyProgressWorkDays":7}"#,
         )
@@ -1178,6 +1211,7 @@ mod tests {
             .apply_display_settings(&mut settings)
             .apply_advanced_settings(&mut settings);
         assert!(!settings.quota_warning_markers_visible);
+        assert!(!settings.highlight_menu_cards_on_hover);
         assert_eq!(
             settings.workday_tick_style,
             codexbar::settings::WorkdayTickStyle::HighContrast
@@ -1221,6 +1255,7 @@ mod tests {
         assert_eq!(json["menuBarIconStyle"], "percent");
         assert_eq!(json["workdayTickStyle"], "high_contrast");
         assert_eq!(json["quotaWarningMarkersVisible"], true);
+        assert_eq!(json["highlightMenuCardsOnHover"], true);
         assert_eq!(
             json["mergedOverviewSelectedProviders"],
             serde_json::json!([])

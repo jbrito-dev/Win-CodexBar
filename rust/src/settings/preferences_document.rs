@@ -156,6 +156,7 @@ pub const EXCLUDED_KEYS: &[&str] = &[
     // Machine-specific paths, hosts and state.
     "notification_sound_paths",
     "codex_custom_sessions_dirs",
+    "antigravity_additional_profile_homes",
     "agent_session_ssh_hosts",
     // Pinned to this machine's zone on first launch; no settings control.
     "cost_usage_bucket_time_zone",
@@ -191,9 +192,11 @@ pub const EXCLUDED_KEYS: &[&str] = &[
     "cost_summary_display_style",
     // Kept out of the portable set, as upstream (0.70.0) keeps them.
     "menu_bar_color_pace",
+    "menu_bar_pace_reserve_positive",
     "stacked_tray_top_provider",
     "stacked_tray_bottom_provider",
     "credential_expiry_notifications_enabled",
+    "highlight_menu_cards_on_hover",
     // No reader anywhere in the app.
     "merge_tray_icons",
 ];

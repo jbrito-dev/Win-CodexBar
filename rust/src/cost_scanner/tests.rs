@@ -3550,6 +3550,9 @@ mod claude_swap;
 #[cfg(test)]
 #[path = "tests/claude_today.rs"]
 mod claude_today;
+
+#[path = "tests/claude_hourly.rs"]
+mod claude_hourly;
 #[cfg(test)]
 #[path = "tests/copied_prefix.rs"]
 mod copied_prefix;

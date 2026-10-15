@@ -3728,6 +3728,18 @@ html:has(.menu-surface--tray) {
 .menu-surface__footer-row:focus-visible .menu-surface__footer-shortcut {
   color: var(--mac-selection-text);
 }
+/* "Highlight menu cards on hover" off: only Refresh is a hosted menu card
+   upstream; the other footer rows stand in for native items, which always
+   highlight. Keyboard focus keeps its highlight. */
+.menu-surface--hover-highlight-off .menu-surface__footer-row--refresh:hover:not(:disabled):not(:focus-visible) {
+  color: var(--mac-text);
+}
+.menu-surface--hover-highlight-off .menu-surface__footer-row--refresh:hover:not(:disabled):not(:focus-visible)::before {
+  background: transparent;
+}
+.menu-surface--hover-highlight-off .menu-surface__footer-row--refresh:hover:not(:disabled):not(:focus-visible) .menu-surface__footer-shortcut {
+  color: var(--mac-text-3);
+}
 
 /* ── Provider icon grid ──────────────────────────────────────────────
    Mirrors the upstream macOS ProviderSwitcherView. Each cell is a

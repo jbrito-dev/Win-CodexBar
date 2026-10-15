@@ -114,6 +114,37 @@ fn missing_oauth_session_is_informational_and_keeps_weekly_lane() {
 }
 
 #[test]
+fn oauth_cloud_credits_block_becomes_display_row_and_leaves_windows_alone() {
+    let response: OAuthUsageResponse = serde_json::from_str(
+        r#"{
+            "five_hour": {"utilization": 10.0, "resets_at": "2026-05-22T22:10:00Z"},
+            "iguana_necktie": {"limit_dollars": 20.0, "used_dollars": 8.0, "remaining_dollars": 12.0}
+        }"#,
+    )
+    .expect("OAuth response with cloud credits should parse");
+
+    let row = super::cloud_credits_row(&response, chrono::Utc::now()).expect("cloud credits row");
+    assert_eq!(row.title(), "Cloud credits");
+    assert_eq!(row.value(), "$12.00 of $20.00 remaining");
+
+    let usage =
+        ClaudeOAuthFetcher::new().build_usage_snapshot(&response, &test_credentials("token"));
+    assert!((usage.primary.used_percent - 10.0).abs() < f64::EPSILON);
+    assert!(usage.secondary.is_none());
+}
+
+#[test]
+fn oauth_response_without_valid_cloud_credits_yields_no_row() {
+    let absent: OAuthUsageResponse =
+        serde_json::from_str(r#"{"five_hour": {"utilization": 1.0}}"#).expect("parse");
+    assert!(super::cloud_credits_row(&absent, chrono::Utc::now()).is_none());
+
+    let malformed: OAuthUsageResponse =
+        serde_json::from_str(r#"{"iguana_necktie": {"limit_dollars": 0.0}}"#).expect("parse");
+    assert!(super::cloud_credits_row(&malformed, chrono::Utc::now()).is_none());
+}
+
+#[test]
 fn parses_current_snake_case_oauth_usage_response() {
     let response: OAuthUsageResponse = serde_json::from_str(
         r#"{

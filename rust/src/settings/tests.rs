@@ -236,6 +236,24 @@ fn tray_pace_color_defaults_off_and_round_trips() {
 }
 
 #[test]
+fn pace_reserve_positive_defaults_off_and_round_trips() {
+    let defaulted: Settings = serde_json::from_str(r#"{ "enabled_providers": [] }"#)
+        .expect("missing pace sign defaults to ahead-of-pace positive");
+    assert!(!defaulted.menu_bar_pace_reserve_positive);
+    assert!(!Settings::default().menu_bar_pace_reserve_positive);
+
+    let enabled = Settings {
+        menu_bar_pace_reserve_positive: true,
+        ..Settings::default()
+    };
+    let json = serde_json::to_string(&enabled).expect("serialize pace sign");
+    assert!(json.contains(r#""menu_bar_pace_reserve_positive":true"#));
+
+    let loaded: Settings = serde_json::from_str(&json).expect("deserialize pace sign");
+    assert!(loaded.menu_bar_pace_reserve_positive);
+}
+
+#[test]
 fn providers_sorted_alphabetically_defaults_off_and_round_trips() {
     assert!(!Settings::default().providers_sorted_alphabetically);
 
@@ -2070,6 +2088,23 @@ fn quota_warning_markers_default_on_and_round_trip() {
 }
 
 #[test]
+fn highlight_menu_cards_on_hover_defaults_on_and_round_trips() {
+    assert!(Settings::default().highlight_menu_cards_on_hover);
+    let legacy: Settings =
+        serde_json::from_str(r#"{ "enabled_providers": [] }"#).expect("legacy file");
+    assert!(legacy.highlight_menu_cards_on_hover);
+
+    let off = Settings {
+        highlight_menu_cards_on_hover: false,
+        ..Settings::default()
+    };
+    let json = serde_json::to_string(&off).expect("serialize hover highlight");
+    assert!(json.contains(r#""highlight_menu_cards_on_hover":false"#));
+    let loaded: Settings = serde_json::from_str(&json).expect("deserialize hover highlight");
+    assert!(!loaded.highlight_menu_cards_on_hover);
+}
+
+#[test]
 fn workday_tick_style_defaults_subtle_and_round_trips() {
     assert_eq!(
         Settings::default().workday_tick_style,
@@ -2419,5 +2454,29 @@ fn custom_quota_warnings_with_explicit_enabled_round_trip() {
             high: 55.0,
             critical: 85.0,
         }
+    );
+}
+
+#[test]
+fn antigravity_additional_profile_homes_default_empty_and_round_trip() {
+    let defaulted: Settings = serde_json::from_str(r#"{ "enabled_providers": [] }"#)
+        .expect("missing additional Gemini homes default to empty");
+    assert!(defaulted.antigravity_additional_profile_homes.is_empty());
+
+    let json = serde_json::to_string(&Settings::default()).expect("serialize default settings");
+    assert!(!json.contains("antigravity_additional_profile_homes"));
+
+    let configured = Settings {
+        antigravity_additional_profile_homes: vec!["D:\\gemini-work".to_string()],
+        ..Settings::default()
+    };
+    let json = serde_json::to_string(&configured).expect("serialize additional Gemini homes");
+    assert!(json.contains(r#""antigravity_additional_profile_homes":["D:\\gemini-work"]"#));
+
+    let loaded: Settings =
+        serde_json::from_str(&json).expect("deserialize additional Gemini homes");
+    assert_eq!(
+        loaded.antigravity_additional_profile_homes,
+        vec!["D:\\gemini-work"]
     );
 }
