@@ -104,9 +104,9 @@ pub async fn check_for_updates_with_channel(channel: UpdateChannel) -> Option<Up
     let client = update_client()?;
     let response = client.get(release_url(channel)).send().await.ok()?;
     let release = parse_release_response(response, channel).await?;
-    let remote_version = remote_version_from_tag(&release.tag_name);
-
-    if is_newer_version(remote_version, CURRENT_VERSION) {
+    // AgentBar releases carry a build number (`v0.70.0-ab.15`) so fork-only
+    // builds of the same upstream version still update.
+    if crate::brand::is_newer_release(&release.tag_name, CURRENT_VERSION) {
         select_release_target(&release)
     } else {
         None

@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
+      # Compiled into the app: the in-app updater compares (version, build).
+      AGENTBAR_BUILD: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -119,10 +121,10 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $out = Join-Path $env:GITHUB_WORKSPACE 'installer-out'
           Push-Location rust/installer
-          & $iscc /Qp "/DAppVersion=$version" "/DTargetBinDir=$env:RUNNER_TEMP\stage" "/DWebView2BootstrapperPath=$env:RUNNER_TEMP\installer-deps\MicrosoftEdgeWebview2Setup.exe" "/DOutputDir=$out" "/DOutputBaseFilename=AgentBar-$version-Setup" codexbar.iss
+          & $iscc /Qp "/DAppVersion=$version" "/DTargetBinDir=$env:RUNNER_TEMP\stage" "/DWebView2BootstrapperPath=$env:RUNNER_TEMP\installer-deps\MicrosoftEdgeWebview2Setup.exe" "/DOutputDir=$out" "/DOutputBaseFilename=AgentBar-$version-ab.$env:AGENTBAR_BUILD-Setup" codexbar.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
           Pop-Location
-          Copy-Item "$env:RUNNER_TEMP\stage\codexbar.exe" (Join-Path $out "AgentBar-$version-portable.exe")
+          Copy-Item "$env:RUNNER_TEMP\stage\codexbar.exe" (Join-Path $out "AgentBar-$version-ab.$env:AGENTBAR_BUILD-portable.exe")
           Get-ChildItem $out
 
       - uses: actions/upload-artifact@v4
@@ -136,12 +138,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          $tag = "v$version"
-          $repo = '${{ github.repository }}'
+          $build = $env:AGENTBAR_BUILD
+          $tag = "v$version-ab.$build"
           $files = Get-ChildItem installer-out/*.exe | ForEach-Object { $_.FullName }
-          # Same version rebuilt: replace the release so the tag points at this commit.
-          gh release view $tag --repo $repo *> $null
-          if ($LASTEXITCODE -eq 0) { gh release delete $tag --repo $repo --cleanup-tag --yes }
-          $notes = "AgentBar $version (${{ steps.version.outputs.short }}), built from Win-CodexBar $version plus the AgentBar changes in FORK.md. Unsigned: if SmartScreen warns, choose More info > Run anyway."
-          gh release create $tag @files --repo $repo --target "${{ github.sha }}" --latest `
-            --title "AgentBar $version" --notes $notes
+          $notes = "AgentBar $version build $build (${{ steps.version.outputs.short }}): Win-CodexBar $version plus the AgentBar changes in FORK.md. Installed copies update themselves from here (Settings > About). Unsigned: if SmartScreen warns, choose More info > Run anyway."
+          gh release create $tag @files --repo '${{ github.repository }}' --target "${{ github.sha }}" --latest `
+            --title "AgentBar $version (build $build)" --notes $notes
