@@ -6,9 +6,15 @@
 //! user can only slide it along the taskbar (left/right for a bottom or top
 //! taskbar). The slide position is stored as a per-mille fraction of the
 //! available travel (`Settings::taskbar_meter_position`) so it survives DPI,
-//! resolution and monitor changes. While shown, a light guard loop keeps it
-//! above the taskbar, re-docks it after display changes, and hides it while a
-//! fullscreen app covers the monitor (the taskbar is hidden then too).
+//! resolution and monitor changes.
+//!
+//! The meter is only visible while its monitor's taskbar is: it hides while a
+//! window spanning the monitor sits above the taskbar in z-order (a game,
+//! video or presentation) and re-raises itself only when Explorer actually
+//! put the taskbar over it. Shell surfaces such as the Start menu, search and
+//! flyouts don't count as fullscreen. WinEvent hooks react to foreground and
+//! z-order changes immediately; a light guard loop is the fallback and also
+//! re-docks the meter after display changes.
 
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::time::Duration;
@@ -30,11 +36,17 @@ pub const POSITION_MAX: u16 = 1000;
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static LOOP_RUNNING: AtomicBool = AtomicBool::new(false);
 static DRAGGING: AtomicBool = AtomicBool::new(false);
+/// Position locked: presses on the meter don't start a drag.
+static LOCKED: AtomicBool = AtomicBool::new(false);
+/// Cursor-poll cadence while a drag is in progress.
+const DRAG_POLL: Duration = Duration::from_millis(8);
+/// Cursor travel (physical px) before a press counts as a drag.
+const DRAG_THRESHOLD_PX: i32 = 3;
 /// Live slide position; persisted to settings when a drag ends.
 static POSITION: AtomicU16 = AtomicU16::new(250);
 /// Device name of the monitor whose taskbar holds the meter ("" = primary).
 static MONITOR: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
-/// Hidden by the guard because a fullscreen app covers the monitor.
+/// Hidden by the guard because a fullscreen window covers the taskbar.
 static HIDDEN_FOR_FULLSCREEN: AtomicBool = AtomicBool::new(false);
 
 /// The taskbar strip of a monitor, in physical pixels.
@@ -148,15 +160,13 @@ pub(crate) fn slide(strip: Strip, width: i32, height: i32, current: u16, delta: 
 /// Monitor the user attached the meter to (by device name), else primary.
 fn target_monitor(window: &tauri::WebviewWindow) -> Option<tauri::Monitor> {
     let wanted = MONITOR.lock().map(|name| name.clone()).unwrap_or_default();
-    if !wanted.is_empty() {
-        if let Ok(monitors) = window.available_monitors() {
-            if let Some(found) = monitors
-                .into_iter()
-                .find(|m| m.name().is_some_and(|name| *name == wanted))
-            {
-                return Some(found);
-            }
-        }
+    if !wanted.is_empty()
+        && let Ok(monitors) = window.available_monitors()
+        && let Some(found) = monitors
+            .into_iter()
+            .find(|m| m.name().is_some_and(|name| *name == wanted))
+    {
+        return Some(found);
     }
     window
         .primary_monitor()
@@ -217,6 +227,7 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
         settings.taskbar_meter_position.min(POSITION_MAX),
         Ordering::Relaxed,
     );
+    LOCKED.store(settings.taskbar_meter_locked, Ordering::Release);
     if let Ok(mut name) = MONITOR.lock() {
         name.clone_from(&settings.taskbar_meter_monitor);
     }
@@ -224,7 +235,7 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
         redock(&window);
         crate::floatbar::apply_no_activate(&window);
         window.show().map_err(|e| e.to_string())?;
-        crate::floatbar::apply_always_on_top(&window);
+        raise(&window);
         set_active(app, true);
         return Ok(());
     }
@@ -256,11 +267,21 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
     });
     redock(&window);
     crate::floatbar::apply_no_activate(&window);
-    crate::floatbar::apply_always_on_top(&window);
+    raise(&window);
     window.show().map_err(|e| e.to_string())?;
-    crate::floatbar::apply_always_on_top(&window);
+    raise(&window);
     set_active(app, true);
     Ok(())
+}
+
+/// Keep the meter above the taskbar (only re-raises when it is covered).
+fn raise(window: &tauri::WebviewWindow) {
+    platform::keep_above_taskbar(window);
+}
+
+/// Lock or unlock the meter's position (settings toggle / context menu).
+pub fn set_locked(locked: bool) {
+    LOCKED.store(locked, Ordering::Release);
 }
 
 /// Close the taskbar meter.
@@ -280,10 +301,11 @@ pub fn apply_state(app: &AppHandle, settings: &Settings) {
         if let Err(error) = show(app) {
             tracing::warn!("taskbar meter: show failed: {error}");
         }
-    } else if !settings.taskbar_meter_enabled && open {
-        if let Err(error) = hide(app) {
-            tracing::warn!("taskbar meter: hide failed: {error}");
-        }
+    } else if !settings.taskbar_meter_enabled
+        && open
+        && let Err(error) = hide(app)
+    {
+        tracing::warn!("taskbar meter: hide failed: {error}");
     }
 }
 
@@ -296,17 +318,12 @@ pub fn install(app: &AppHandle) {
 fn set_active(app: &AppHandle, active: bool) {
     ACTIVE.store(active, Ordering::Release);
     if active {
-        // Re-raise instantly whenever Explorer reorders the taskbar (a tray
-        // click brings it to the top of the topmost band); the poll below is
-        // only the fallback.
+        // React instantly whenever Explorer reorders windows or a fullscreen
+        // app takes the foreground; the poll below is only the fallback.
         if let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) {
             platform::track_window(&window);
         }
-        let handle = app.clone();
-        let _hooked = app.run_on_main_thread(move || {
-            let _ = &handle;
-            platform::install_zorder_hook();
-        });
+        let _hooked = app.run_on_main_thread(platform::install_zorder_hook);
     } else {
         platform::forget_window();
     }
@@ -326,21 +343,20 @@ fn set_active(app: &AppHandle, active: bool) {
 }
 
 fn guard_tick(window: &tauri::WebviewWindow) {
-    let fullscreen = platform::foreground_is_fullscreen();
-    if fullscreen {
+    if platform::taskbar_is_covered(window) {
         if !HIDDEN_FOR_FULLSCREEN.swap(true, Ordering::AcqRel) {
-            let _hidden = window.hide();
+            platform::set_shown(window, false);
         }
         return;
     }
     if HIDDEN_FOR_FULLSCREEN.swap(false, Ordering::AcqRel) {
         crate::floatbar::apply_no_activate(window);
-        let _shown = window.show();
+        platform::set_shown(window, true);
     }
     if !DRAGGING.load(Ordering::Acquire) {
         redock(window);
     }
-    crate::floatbar::apply_always_on_top(window);
+    raise(window);
 }
 
 /// Webview reports its content size (physical pixels): resize and re-dock.
@@ -357,46 +373,83 @@ pub fn taskbar_meter_resize(app: AppHandle, width: f64, height: f64) -> Result<(
         .map_err(|e| e.to_string())?;
     redock(&window);
     crate::floatbar::apply_no_activate(&window);
-    crate::floatbar::apply_always_on_top(&window);
+    raise(&window);
     Ok(())
 }
 
-/// Slide the meter along the taskbar by the pointer movement (physical
-/// pixels); only the component along the taskbar is used.
+/// A primary-button press on the meter: track the cursor natively until the
+/// physical button is released, sliding the meter along the taskbar. Polling
+/// the button state (instead of waiting for a webview pointerup, which can be
+/// lost while the window moves under the cursor) guarantees the drag ends on
+/// release. Ignored while the position is locked.
 #[tauri::command]
-pub fn taskbar_meter_drag(app: AppHandle, dx: f64, dy: f64) -> Result<(), String> {
+pub fn taskbar_meter_drag_start(app: AppHandle) -> Result<(), String> {
+    if LOCKED.load(Ordering::Acquire) {
+        return Ok(());
+    }
     let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) else {
         return Ok(());
     };
-    DRAGGING.store(true, Ordering::Release);
-    let Some(strip) = primary_strip(&window) else {
+    let Some(origin) = platform::cursor_position() else {
         return Ok(());
     };
-    let (w, h) = window_size(&window);
-    // Drag deltas are bounded by the screen size.
-    let delta = if strip.horizontal { dx } else { dy };
-    let delta = delta.round().clamp(-16384.0, 16384.0) as i32;
-    let next = slide(strip, w, h, POSITION.load(Ordering::Relaxed), delta);
-    POSITION.store(next, Ordering::Relaxed);
-    redock(&window);
+    if DRAGGING.swap(true, Ordering::AcqRel) {
+        return Ok(());
+    }
+    std::thread::spawn(move || {
+        let moved = drag_loop(&window, origin);
+        DRAGGING.store(false, Ordering::Release);
+        if moved {
+            persist_position();
+        }
+    });
     Ok(())
 }
 
-/// Finish a drag: persist the slide position.
-#[tauri::command]
-pub fn taskbar_meter_drag_end() -> Result<(), String> {
-    DRAGGING.store(false, Ordering::Release);
+/// Follow the cursor while the primary button is held. Returns whether the
+/// meter moved.
+fn drag_loop(window: &tauri::WebviewWindow, origin: (i32, i32)) -> bool {
+    let start = POSITION.load(Ordering::Relaxed);
+    let mut moved = false;
+    while platform::primary_button_down() && !LOCKED.load(Ordering::Acquire) {
+        std::thread::sleep(DRAG_POLL);
+        let (Some(cursor), Some(strip)) = (platform::cursor_position(), primary_strip(window))
+        else {
+            break;
+        };
+        let delta = if strip.horizontal {
+            cursor.0 - origin.0
+        } else {
+            cursor.1 - origin.1
+        };
+        if !moved && delta.abs() < DRAG_THRESHOLD_PX {
+            continue;
+        }
+        moved = true;
+        let (w, h) = window_size(window);
+        let next = slide(strip, w, h, start, delta);
+        if POSITION.swap(next, Ordering::Relaxed) != next {
+            redock(window);
+        }
+    }
+    moved
+}
+
+/// Persist the live slide position after a drag.
+fn persist_position() {
     let mut settings = Settings::load();
     let position = POSITION.load(Ordering::Relaxed);
     if settings.taskbar_meter_position != position {
         settings.taskbar_meter_position = position;
-        settings.save().map_err(|e| e.to_string())?;
+        if let Err(error) = settings.save() {
+            tracing::warn!("taskbar meter: saving position failed: {error}");
+        }
     }
-    Ok(())
 }
 
 const MENU_MONITOR_PREFIX: &str = "tbm_monitor:";
 const MENU_HIDE: &str = "tbm_hide";
+const MENU_LOCK: &str = "tbm_lock";
 
 /// Right-click menu: pick the monitor whose taskbar holds the meter, or hide it.
 #[tauri::command]
@@ -442,6 +495,16 @@ pub fn taskbar_meter_context_menu(app: AppHandle) -> Result<(), String> {
     }
     let separator = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     menu.append(&separator).map_err(|e| e.to_string())?;
+    let lock = CheckMenuItem::with_id(
+        &app,
+        MENU_LOCK,
+        "Lock position",
+        true,
+        LOCKED.load(Ordering::Acquire),
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    menu.append(&lock).map_err(|e| e.to_string())?;
     let hide = MenuItem::with_id(&app, MENU_HIDE, "Hide taskbar meter", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     menu.append(&hide).map_err(|e| e.to_string())?;
@@ -460,8 +523,17 @@ fn handle_menu(app: &AppHandle, id: &str) {
         }
         if let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) {
             redock(&window);
-            crate::floatbar::apply_always_on_top(&window);
+            raise(&window);
         }
+    } else if id == MENU_LOCK {
+        let locked = !LOCKED.load(Ordering::Acquire);
+        set_locked(locked);
+        let mut settings = Settings::load();
+        settings.taskbar_meter_locked = locked;
+        if let Err(error) = settings.save() {
+            tracing::warn!("taskbar meter: saving lock failed: {error}");
+        }
+        crate::events::emit_settings_changed(app);
     } else if id == MENU_HIDE {
         let mut settings = Settings::load();
         settings.taskbar_meter_enabled = false;
@@ -491,8 +563,63 @@ mod platform {
     const SWP_NOSIZE: u32 = 0x0001;
     const SWP_NOMOVE: u32 = 0x0002;
     const SWP_NOACTIVATE: u32 = 0x0010;
+    const GW_HWNDNEXT: u32 = 2;
+    const GW_HWNDPREV: u32 = 3;
+    const GWL_EXSTYLE: i32 = -20;
+    const SW_HIDE: i32 = 0;
+    const SW_SHOWNOACTIVATE: i32 = 4;
+    const WS_EX_TRANSPARENT: isize = 0x0000_0020;
+    const MONITOR_DEFAULTTONEAREST: u32 = 2;
+    const DWMWA_CLOAKED: u32 = 14;
+    const SM_SWAPBUTTON: i32 = 23;
+    const VK_LBUTTON: i32 = 0x01;
+    const VK_RBUTTON: i32 = 0x02;
+    const QUNS_RUNNING_D3D_FULL_SCREEN: i32 = 3;
+    /// Upper bound on the z-order walk above the taskbar.
+    const MAX_WALK: usize = 512;
+
+    /// Shell surfaces that sit above the taskbar or span the monitor without
+    /// hiding it (Start, search, notification center, Alt+Tab, task view...).
+    const SHELL_CLASSES: &[&str] = &[
+        "Progman",
+        "WorkerW",
+        "Shell_TrayWnd",
+        "Shell_SecondaryTrayWnd",
+        "Windows.UI.Core.CoreWindow",
+        "XamlExplorerHostIslandWindow",
+        "TopLevelWindowForOverflowXamlIsland",
+        "Xaml_WindowedPopupClass",
+        "NotifyIconOverflowWindow",
+        "MultitaskingViewFrame",
+        "ForegroundStaging",
+        "TaskListThumbnailWnd",
+    ];
 
     type WinEventProc = unsafe extern "system" fn(isize, u32, isize, i32, i32, u32, u32);
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+
+    #[repr(C)]
+    struct MonitorInfo {
+        cb_size: u32,
+        rc_monitor: Rect,
+        rc_work: Rect,
+        dw_flags: u32,
+    }
 
     #[link(name = "user32")]
     unsafe extern "system" {
@@ -514,14 +641,49 @@ mod platform {
             cy: i32,
             flags: u32,
         ) -> i32;
+        fn FindWindowExW(
+            parent: isize,
+            after: isize,
+            class: *const u16,
+            title: *const u16,
+        ) -> isize;
+        fn GetWindow(hwnd: isize, cmd: u32) -> isize;
+        fn GetTopWindow(hwnd: isize) -> isize;
+        fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
+        fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+        fn IsWindowVisible(hwnd: isize) -> i32;
+        fn GetForegroundWindow() -> isize;
+        fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
+        fn GetClassNameW(hwnd: isize, name: *mut u16, max: i32) -> i32;
+        fn MonitorFromWindow(hwnd: isize, flags: u32) -> isize;
+        fn GetMonitorInfoW(monitor: isize, info: *mut MonitorInfo) -> i32;
+        fn GetCursorPos(point: *mut Point) -> i32;
+        fn GetAsyncKeyState(key: i32) -> i16;
+        fn GetSystemMetrics(index: i32) -> i32;
+    }
+
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmGetWindowAttribute(hwnd: isize, attr: u32, value: *mut u32, size: u32) -> i32;
+    }
+
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHQueryUserNotificationState(state: *mut i32) -> i32;
+    }
+
+    fn meter_hwnd(window: &tauri::WebviewWindow) -> Option<isize> {
+        use raw_window_handle::HasWindowHandle;
+        let handle = window.window_handle().ok()?;
+        match handle.as_raw() {
+            raw_window_handle::RawWindowHandle::Win32(h) => Some(h.hwnd.get()),
+            _ => None,
+        }
     }
 
     pub fn track_window(window: &tauri::WebviewWindow) {
-        use raw_window_handle::HasWindowHandle;
-        if let Ok(handle) = window.window_handle()
-            && let raw_window_handle::RawWindowHandle::Win32(h) = handle.as_raw()
-        {
-            METER_HWND.store(h.hwnd.get(), Ordering::Release);
+        if let Some(hwnd) = meter_hwnd(window) {
+            METER_HWND.store(hwnd, Ordering::Release);
         }
     }
 
@@ -529,6 +691,118 @@ mod platform {
         METER_HWND.store(0, Ordering::Release);
     }
 
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    fn class_name(hwnd: isize) -> String {
+        let mut class = [0u16; 128];
+        // SAFETY: the buffer is a valid local of the advertised length.
+        let len = unsafe { GetClassNameW(hwnd, class.as_mut_ptr(), 128) };
+        String::from_utf16_lossy(&class[..usize::try_from(len).unwrap_or(0)])
+    }
+
+    fn monitor_rect(monitor: isize) -> Option<Rect> {
+        let mut info = MonitorInfo {
+            cb_size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap_or(40),
+            rc_monitor: Rect::default(),
+            rc_work: Rect::default(),
+            dw_flags: 0,
+        };
+        // SAFETY: `info` is a valid, correctly sized MONITORINFO.
+        (unsafe { GetMonitorInfoW(monitor, &mut info) } != 0).then_some(info.rc_monitor)
+    }
+
+    /// The taskbar window (primary or secondary) on `monitor`, or 0.
+    fn taskbar_on(monitor: isize) -> isize {
+        let primary = wide("Shell_TrayWnd");
+        let secondary = wide("Shell_SecondaryTrayWnd");
+        // SAFETY: class names are NUL-terminated locals; window queries only.
+        unsafe {
+            let main = FindWindowExW(0, 0, primary.as_ptr(), std::ptr::null());
+            if main != 0 && MonitorFromWindow(main, MONITOR_DEFAULTTONEAREST) == monitor {
+                return main;
+            }
+            let mut after = 0;
+            for _ in 0..16 {
+                after = FindWindowExW(0, after, secondary.as_ptr(), std::ptr::null());
+                if after == 0 {
+                    break;
+                }
+                if MonitorFromWindow(after, MONITOR_DEFAULTTONEAREST) == monitor {
+                    return after;
+                }
+            }
+        }
+        0
+    }
+
+    /// Whether `taskbar` sits above `meter` in z-order.
+    fn below(meter: isize, taskbar: isize) -> bool {
+        // SAFETY: z-order walk over top-level windows; read-only queries.
+        unsafe {
+            let mut hwnd = GetWindow(meter, GW_HWNDPREV);
+            for _ in 0..MAX_WALK {
+                if hwnd == 0 {
+                    return false;
+                }
+                if hwnd == taskbar {
+                    return true;
+                }
+                hwnd = GetWindow(hwnd, GW_HWNDPREV);
+            }
+        }
+        false
+    }
+
+    fn set_topmost(meter: isize) {
+        // SAFETY: raising our own window in the topmost band; no pointers.
+        unsafe {
+            SetWindowPos(
+                meter,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
+            );
+        }
+    }
+
+    /// Put the meter back above its monitor's taskbar, touching z-order only
+    /// when Explorer actually raised the taskbar over it (each needless
+    /// re-raise is itself a repaint). Without a taskbar window, force topmost.
+    fn raise_hwnd(meter: isize) {
+        // SAFETY: window queries only.
+        let monitor = unsafe { MonitorFromWindow(meter, MONITOR_DEFAULTTONEAREST) };
+        let taskbar = taskbar_on(monitor);
+        if taskbar == 0 || below(meter, taskbar) {
+            set_topmost(meter);
+        }
+    }
+
+    /// Show/hide without activating. Raw calls on purpose: the z-order hook
+    /// hides with ShowWindow too, which tao does not track, so its own
+    /// show() would be a no-op afterwards.
+    pub fn set_shown(window: &tauri::WebviewWindow, shown: bool) {
+        if let Some(meter) = meter_hwnd(window) {
+            // SAFETY: showing/hiding our own window.
+            unsafe {
+                ShowWindow(meter, if shown { SW_SHOWNOACTIVATE } else { SW_HIDE });
+            }
+        }
+    }
+
+    pub fn keep_above_taskbar(window: &tauri::WebviewWindow) {
+        if let Some(meter) = meter_hwnd(window) {
+            raise_hwnd(meter);
+        }
+    }
+
+    /// React to foreground / z-order changes right away instead of waiting
+    /// for the guard poll: hide under a fullscreen window, otherwise make sure
+    /// the taskbar didn't just cover the meter.
     unsafe extern "system" fn on_zorder_event(
         _hook: isize,
         _event: u32,
@@ -539,20 +813,20 @@ mod platform {
         _time: u32,
     ) {
         let meter = METER_HWND.load(Ordering::Acquire);
-        if meter != 0 {
-            // SAFETY: raising our own window in the topmost band; no pointers.
-            unsafe {
-                SetWindowPos(
-                    meter,
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
-                );
-            }
+        if meter == 0 {
+            return;
         }
+        if covered(meter) {
+            // SAFETY: hiding our own window; the guard shows it again.
+            unsafe {
+                if IsWindowVisible(meter) != 0 {
+                    ShowWindow(meter, SW_HIDE);
+                }
+            }
+            super::HIDDEN_FOR_FULLSCREEN.store(true, Ordering::Release);
+            return;
+        }
+        raise_hwnd(meter);
     }
 
     /// Install (once, on the UI thread, which pumps messages) out-of-context
@@ -586,86 +860,118 @@ mod platform {
         }
     }
 
-    #[repr(C)]
-    #[derive(Default, Clone, Copy)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
-
-    #[repr(C)]
-    struct MonitorInfo {
-        cb_size: u32,
-        rc_monitor: Rect,
-        rc_work: Rect,
-        dw_flags: u32,
-    }
-
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn GetForegroundWindow() -> isize;
-        fn GetDesktopWindow() -> isize;
-        fn GetShellWindow() -> isize;
-        fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
-        fn GetClassNameW(hwnd: isize, name: *mut u16, max: i32) -> i32;
-        fn MonitorFromWindow(hwnd: isize, flags: u32) -> isize;
-        fn GetMonitorInfoW(monitor: isize, info: *mut MonitorInfo) -> i32;
-    }
-
-    const MONITOR_DEFAULTTONEAREST: u32 = 2;
-
-    /// True when the foreground window covers its whole monitor (a game,
-    /// video or presentation), excluding the desktop and the taskbar itself.
-    pub fn foreground_is_fullscreen() -> bool {
-        // SAFETY: plain Win32 queries on window handles; every out-pointer is
-        // a valid, properly sized local.
+    /// A visible, opaque, non-shell window that spans the whole monitor.
+    fn covers_monitor(hwnd: isize, monitor: Rect) -> bool {
+        // SAFETY: window queries with valid, properly sized out-pointers.
         unsafe {
-            let fg = GetForegroundWindow();
-            if fg == 0 || fg == GetDesktopWindow() || fg == GetShellWindow() {
+            if IsWindowVisible(hwnd) == 0 {
                 return false;
             }
-            let mut class = [0u16; 64];
-            let len = GetClassNameW(fg, class.as_mut_ptr(), 64);
-            if len > 0 {
-                let name = String::from_utf16_lossy(&class[..usize::try_from(len).unwrap_or(0)]);
-                if matches!(
-                    name.as_str(),
-                    "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
-                ) {
-                    return false;
-                }
+            if GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT != 0 {
+                // Click-through overlays (GPU/recording HUDs) hide nothing.
+                return false;
+            }
+            let mut cloaked = 0u32;
+            if DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut cloaked, 4) == 0 && cloaked != 0 {
+                return false;
             }
             let mut rect = Rect::default();
-            if GetWindowRect(fg, &mut rect) == 0 {
+            if GetWindowRect(hwnd, &mut rect) == 0 {
                 return false;
             }
-            let monitor = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
-            if monitor == 0 {
+            if !(rect.left <= monitor.left
+                && rect.top <= monitor.top
+                && rect.right >= monitor.right
+                && rect.bottom >= monitor.bottom)
+            {
                 return false;
             }
-            let mut info = MonitorInfo {
-                cb_size: u32::try_from(std::mem::size_of::<MonitorInfo>()).unwrap_or(40),
-                rc_monitor: Rect::default(),
-                rc_work: Rect::default(),
-                dw_flags: 0,
+        }
+        !SHELL_CLASSES.contains(&class_name(hwnd).as_str())
+    }
+
+    /// True while the taskbar of the meter's monitor is hidden behind a
+    /// fullscreen window (a game, video or presentation): some window that
+    /// spans the monitor sits above the taskbar in z-order. Shell surfaces
+    /// like the Start menu don't count.
+    pub fn taskbar_is_covered(window: &tauri::WebviewWindow) -> bool {
+        meter_hwnd(window).is_some_and(covered)
+    }
+
+    fn covered(meter: isize) -> bool {
+        let mut state = 0i32;
+        // SAFETY: `state` is a valid out-pointer.
+        if unsafe { SHQueryUserNotificationState(&mut state) } == 0
+            && state == QUNS_RUNNING_D3D_FULL_SCREEN
+        {
+            return true;
+        }
+        // SAFETY: window queries only.
+        let monitor = unsafe { MonitorFromWindow(meter, MONITOR_DEFAULTTONEAREST) };
+        let Some(rect) = monitor_rect(monitor) else {
+            return false;
+        };
+        let taskbar = taskbar_on(monitor);
+        if taskbar == 0 {
+            // No taskbar to compare against: fall back to the foreground.
+            // SAFETY: window queries only.
+            let fg = unsafe { GetForegroundWindow() };
+            return fg != 0
+                && fg != meter
+                && unsafe { MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST) } == monitor
+                && covers_monitor(fg, rect);
+        }
+        // SAFETY: z-order walk over top-level windows; read-only queries.
+        unsafe {
+            let mut hwnd = GetTopWindow(0);
+            for _ in 0..MAX_WALK {
+                if hwnd == 0 || hwnd == taskbar {
+                    return false;
+                }
+                if hwnd != meter && covers_monitor(hwnd, rect) {
+                    return true;
+                }
+                hwnd = GetWindow(hwnd, GW_HWNDNEXT);
+            }
+        }
+        false
+    }
+
+    /// Cursor position in physical screen pixels.
+    pub fn cursor_position() -> Option<(i32, i32)> {
+        let mut point = Point::default();
+        // SAFETY: `point` is a valid out-pointer.
+        (unsafe { GetCursorPos(&mut point) } != 0).then_some((point.x, point.y))
+    }
+
+    /// Whether the primary mouse button is physically held right now.
+    pub fn primary_button_down() -> bool {
+        // SAFETY: stateless input queries.
+        unsafe {
+            // GetAsyncKeyState reads physical buttons; honor swapped buttons.
+            let key = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+                VK_RBUTTON
+            } else {
+                VK_LBUTTON
             };
-            if GetMonitorInfoW(monitor, &mut info) == 0 {
-                return false;
-            }
-            let m = info.rc_monitor;
-            rect.left <= m.left
-                && rect.top <= m.top
-                && rect.right >= m.right
-                && rect.bottom >= m.bottom
+            GetAsyncKeyState(key) < 0
         }
     }
 }
 
 #[cfg(not(windows))]
 mod platform {
-    pub fn foreground_is_fullscreen() -> bool {
+    pub fn taskbar_is_covered(_window: &tauri::WebviewWindow) -> bool {
+        false
+    }
+    pub fn keep_above_taskbar(_window: &tauri::WebviewWindow) {}
+    pub fn set_shown(window: &tauri::WebviewWindow, shown: bool) {
+        let _changed = if shown { window.show() } else { window.hide() };
+    }
+    pub fn cursor_position() -> Option<(i32, i32)> {
+        None
+    }
+    pub fn primary_button_down() -> bool {
         false
     }
     pub fn track_window(_window: &tauri::WebviewWindow) {}

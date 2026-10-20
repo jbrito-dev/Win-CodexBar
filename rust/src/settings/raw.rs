@@ -316,6 +316,8 @@ pub(super) struct RawSettings {
     taskbar_meter_position: u16,
     #[serde(default)]
     taskbar_meter_monitor: String,
+    #[serde(default)]
+    taskbar_meter_locked: bool,
     #[serde(default = "default_true")]
     promote_tray_icon: bool,
     #[serde(default = "default_true")]
@@ -464,6 +466,7 @@ impl Default for RawSettings {
             taskbar_meter_enabled: s.taskbar_meter_enabled,
             taskbar_meter_position: s.taskbar_meter_position,
             taskbar_meter_monitor: s.taskbar_meter_monitor,
+            taskbar_meter_locked: s.taskbar_meter_locked,
             promote_tray_icon: s.promote_tray_icon,
             claude_daily_routines_usage_visible: s.claude_daily_routines_usage_visible,
             claude_allow_reading_claude_code_credentials: s
@@ -825,6 +828,7 @@ impl From<RawSettings> for Settings {
             taskbar_meter_enabled: raw.taskbar_meter_enabled,
             taskbar_meter_position: raw.taskbar_meter_position.min(1000),
             taskbar_meter_monitor: raw.taskbar_meter_monitor,
+            taskbar_meter_locked: raw.taskbar_meter_locked,
             promote_tray_icon: raw.promote_tray_icon,
             claude_daily_routines_usage_visible: raw.claude_daily_routines_usage_visible,
             claude_allow_reading_claude_code_credentials: raw

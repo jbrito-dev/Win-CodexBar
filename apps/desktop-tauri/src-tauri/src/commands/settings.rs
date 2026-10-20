@@ -106,6 +106,7 @@ pub struct SettingsUpdate {
     pub float_bar_detailed: Option<bool>,
     pub taskbar_meter_enabled: Option<bool>,
     pub taskbar_meter_position: Option<u16>,
+    pub taskbar_meter_locked: Option<bool>,
     pub promote_tray_icon: Option<bool>,
     pub claude_daily_routines_usage_visible: Option<bool>,
     pub alibaba_token_plan_region: Option<String>,
@@ -615,6 +616,7 @@ impl SettingsUpdate {
         let float_bar_patch = self.float_bar_patch();
         let taskbar_meter_enabled = self.taskbar_meter_enabled;
         let taskbar_meter_position = self.taskbar_meter_position;
+        let taskbar_meter_locked = self.taskbar_meter_locked;
         self.apply_provider_settings(settings)
             .apply_general_settings(settings)?
             .apply_display_settings(settings)
@@ -626,6 +628,9 @@ impl SettingsUpdate {
         }
         if let Some(v) = taskbar_meter_position {
             settings.taskbar_meter_position = v.min(crate::taskbar_meter::POSITION_MAX);
+        }
+        if let Some(v) = taskbar_meter_locked {
+            settings.taskbar_meter_locked = v;
         }
         Ok(float_bar_patch)
     }
@@ -742,6 +747,7 @@ pub async fn update_settings(
     let refresh_tray_presentation = patch.refreshes_tray_presentation();
     let stay_awake_changed = patch.stay_awake_enabled.is_some();
     let taskbar_meter_changed = patch.taskbar_meter_enabled.is_some();
+    let taskbar_meter_lock_changed = patch.taskbar_meter_locked.is_some();
     let tray_promotion_changed = patch.changes_tray_promotion();
     let tray_panel_always_on_top_changed = patch.tray_panel_always_on_top.is_some();
     let previous_promoted = settings.promote_tray_icon;
@@ -787,6 +793,9 @@ pub async fn update_settings(
     crate::floatbar::after_settings_saved(&app, &float_bar_patch, &settings, notify_float_bar);
     if taskbar_meter_changed {
         crate::taskbar_meter::apply_state(&app, &settings);
+    }
+    if taskbar_meter_lock_changed {
+        crate::taskbar_meter::set_locked(settings.taskbar_meter_locked);
     }
     if stay_awake_changed {
         crate::stay_awake::settings_changed(&app, settings.stay_awake_enabled);

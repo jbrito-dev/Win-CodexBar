@@ -132,6 +132,7 @@ const ALLOWED_PREFERENCES: &[(&str, Validator)] = &[
     ("taskbar_meter_enabled", typed::<bool>),
     ("taskbar_meter_position", uint_in::<0, 1000>),
     ("taskbar_meter_monitor", typed::<String>),
+    ("taskbar_meter_locked", typed::<bool>),
     ("cost_reporting_period", cost_reporting_period),
     ("cost_usage_enabled", typed::<bool>),
     ("spend_dashboard_period", cost_reporting_period),

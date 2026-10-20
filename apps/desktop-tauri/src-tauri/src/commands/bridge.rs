@@ -1053,6 +1053,7 @@ pub struct SettingsSnapshot {
     float_bar_detailed: bool,
     taskbar_meter_enabled: bool,
     taskbar_meter_position: u16,
+    taskbar_meter_locked: bool,
     promote_tray_icon: bool,
     claude_daily_routines_usage_visible: bool,
     claude_allow_reading_claude_code_credentials: bool,
@@ -1227,6 +1228,7 @@ impl From<Settings> for SettingsSnapshot {
             float_bar_detailed: settings.float_bar_detailed,
             taskbar_meter_enabled: settings.taskbar_meter_enabled,
             taskbar_meter_position: settings.taskbar_meter_position,
+            taskbar_meter_locked: settings.taskbar_meter_locked,
             promote_tray_icon: settings.promote_tray_icon,
             claude_daily_routines_usage_visible: settings.claude_daily_routines_usage_visible,
             claude_allow_reading_claude_code_credentials: settings

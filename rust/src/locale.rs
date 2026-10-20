@@ -1361,6 +1361,8 @@ locale_keys! {
     TaskbarMeterSectionTitle,
     TaskbarMeterEnabled,
     TaskbarMeterEnabledHelper,
+    TaskbarMeterLocked,
+    TaskbarMeterLockedHelper,
     FloatBarInvertColors,
     FloatBarInvertColorsHelper,
     FloatBarClickThrough,

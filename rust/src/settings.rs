@@ -455,6 +455,10 @@ pub struct Settings {
     #[serde(default)]
     pub taskbar_meter_monitor: String,
 
+    /// Pin the taskbar meter where it is: dragging no longer moves it.
+    #[serde(default)]
+    pub taskbar_meter_locked: bool,
+
     /// Promote the tray icon out of the Windows hidden-icons overflow area.
     /// Only has effect on Windows 11 (build ≥ 22000); silently ignored elsewhere.
     /// Defaults on so upgrades keep the icon pinned to the taskbar notification area.
@@ -786,6 +790,7 @@ impl Default for Settings {
             taskbar_meter_enabled: false,
             taskbar_meter_position: default_taskbar_meter_position(),
             taskbar_meter_monitor: String::new(),
+            taskbar_meter_locked: false,
             promote_tray_icon: true,
             claude_daily_routines_usage_visible: true,
             claude_allow_reading_claude_code_credentials: false,

@@ -26,6 +26,17 @@ export default function TaskbarMeterSettingsSection({ settings, saving, set }: P
             onChange={(v) => set({ taskbarMeterEnabled: v })}
           />
         </Field>
+        <Field
+          label={t("TaskbarMeterLocked")}
+          description={t("TaskbarMeterLockedHelper")}
+          leading
+        >
+          <Toggle
+            checked={settings.taskbarMeterLocked}
+            disabled={saving || !settings.taskbarMeterEnabled}
+            onChange={(v) => set({ taskbarMeterLocked: v })}
+          />
+        </Field>
       </div>
     </section>
   );

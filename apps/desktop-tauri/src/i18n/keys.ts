@@ -1075,6 +1075,8 @@ export const ALL_LOCALE_KEYS = [
   "TaskbarMeterSectionTitle",
   "TaskbarMeterEnabled",
   "TaskbarMeterEnabledHelper",
+  "TaskbarMeterLocked",
+  "TaskbarMeterLockedHelper",
   "FloatBarInvertColors",
   "FloatBarInvertColorsHelper",
   "FloatBarClickThrough",

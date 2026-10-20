@@ -14,7 +14,17 @@ body.taskbar-meter-window #root {
   background: rgba(255, 255, 255, 0.06);
   box-shadow: none;
 }
+.taskbar-meter--locked,
+.taskbar-meter--locked .floatbar__pill,
+.taskbar-meter--locked .floatbar__tile {
+  cursor: default;
+}
 .taskbar-meter .floatbar__pill:hover,
 .taskbar-meter .floatbar__tile:hover {
   background: rgba(255, 255, 255, 0.11);
+}
+.taskbar-meter--locked,
+.taskbar-meter--locked .floatbar__pill,
+.taskbar-meter--locked .floatbar__tile {
+  cursor: default;
 }

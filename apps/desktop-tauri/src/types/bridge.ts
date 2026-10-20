@@ -334,6 +334,8 @@ export interface SettingsSnapshot {
   taskbarMeterEnabled: boolean;
   /** Slide position along the taskbar, per mille (0–1000). */
   taskbarMeterPosition: number;
+  /** Pin the taskbar meter in place (dragging does not move it). */
+  taskbarMeterLocked: boolean;
   /** Promote the tray icon out of the Windows hidden-icons overflow (Win11 only). */
   promoteTrayIcon?: boolean;
   /** When true, show Claude Daily Routines quota row (default true). */
@@ -484,6 +486,7 @@ export interface SettingsUpdate {
   floatBarDetailed?: boolean;
   taskbarMeterEnabled?: boolean;
   taskbarMeterPosition?: number;
+  taskbarMeterLocked?: boolean;
   promoteTrayIcon?: boolean;
   claudeDailyRoutinesUsageVisible?: boolean;
   alibabaTokenPlanRegion?: string;

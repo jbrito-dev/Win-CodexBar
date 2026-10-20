@@ -142,6 +142,7 @@ describe("Language type", () => {
       floatBarDetailed: false,
       taskbarMeterEnabled: false,
       taskbarMeterPosition: 250,
+      taskbarMeterLocked: false,
       claudeDailyRoutinesUsageVisible: true,
       claudeAllowReadingClaudeCodeCredentials: false,
       alibabaTokenPlanRegion: "cn",

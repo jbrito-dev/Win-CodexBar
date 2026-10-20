@@ -11,9 +11,6 @@ import type { BootstrapState, ProviderUsageSnapshot } from "../types/bridge";
 import "../floatbar/FloatBar.css";
 import "./TaskbarMeter.css";
 
-/** Pointer travel (CSS px) before a press counts as a drag. */
-const DRAG_THRESHOLD = 2;
-
 /**
  * Taskbar meter: one tile per enabled provider (its current account) with the
  * session and weekly meters, docked on the Windows taskbar by the native side.
@@ -88,32 +85,12 @@ export default function TaskbarMeter({ state }: { state: BootstrapState }) {
     return () => observer.disconnect();
   }, [fit]);
 
-  // Slide along the taskbar: the native side applies only the along-axis part.
-  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  // Slide along the taskbar. The native side tracks the cursor until the
+  // physical button is released, so a lost pointerup can't leave it stuck
+  // following the mouse. Locked meters ignore the press.
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { x: event.screenX, y: event.screenY, moved: false };
-  };
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const current = drag.current;
-    if (!current) return;
-    const dx = event.screenX - current.x;
-    const dy = event.screenY - current.y;
-    if (!current.moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
-    current.moved = true;
-    current.x = event.screenX;
-    current.y = event.screenY;
-    const dpr = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
-    void invoke("taskbar_meter_drag", { dx: dx * dpr, dy: dy * dpr }).catch(() => {});
-  };
-  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    const current = drag.current;
-    drag.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    if (current?.moved) void invoke("taskbar_meter_drag_end").catch(() => {});
+    if (event.button !== 0 || settings.taskbarMeterLocked) return;
+    void invoke("taskbar_meter_drag_start").catch(() => {});
   };
 
   const renderProvider = (p: ProviderUsageSnapshot) =>
@@ -146,11 +123,10 @@ export default function TaskbarMeter({ state }: { state: BootstrapState }) {
   return (
     <div
       ref={rootRef}
-      className="floatbar floatbar--horizontal floatbar--floating floatbar--detailed taskbar-meter"
+      className={`floatbar floatbar--horizontal floatbar--floating floatbar--detailed taskbar-meter${
+        settings.taskbarMeterLocked ? " taskbar-meter--locked" : ""
+      }`}
       onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
       onContextMenu={(event) => {
         event.preventDefault();
         void invoke("taskbar_meter_context_menu").catch(() => {});

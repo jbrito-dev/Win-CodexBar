@@ -204,6 +204,7 @@ function settings(overrides: Partial<SettingsSnapshot> = {}): SettingsSnapshot {
     floatBarDetailed: false,
     taskbarMeterEnabled: false,
     taskbarMeterPosition: 250,
+    taskbarMeterLocked: false,
     claudeDailyRoutinesUsageVisible: true,
     claudeAllowReadingClaudeCodeCredentials: false,
     alibabaTokenPlanRegion: "cn",
