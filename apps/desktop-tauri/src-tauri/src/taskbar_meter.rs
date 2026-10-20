@@ -207,15 +207,42 @@ fn window_size(window: &tauri::WebviewWindow) -> (i32, i32) {
         .unwrap_or((1, 1))
 }
 
-/// Dock the window at the live slide position.
+/// Center of the target monitor (physical px), used to find its taskbar.
+fn target_point(window: &tauri::WebviewWindow) -> Option<(i32, i32)> {
+    let monitor = target_monitor(window)?;
+    let pos = monitor.position();
+    let size = monitor.size();
+    let half = |v: u32| i32::try_from(v / 2).unwrap_or(0);
+    Some((pos.x + half(size.width), pos.y + half(size.height)))
+}
+
+/// Strip the meter slides along: the taskbar window it is embedded in, else
+/// the strip derived from the monitor work area.
+fn current_strip(window: &tauri::WebviewWindow) -> Option<Strip> {
+    if let Some(host) = platform::host_rect(window) {
+        return Some(host);
+    }
+    primary_strip(window)
+}
+
+/// Dock the window at the live slide position. Embeds it into the target
+/// monitor's taskbar first (so it is drawn as part of the taskbar), falling
+/// back to a free-floating topmost window when no taskbar window is found.
 fn redock(window: &tauri::WebviewWindow) {
-    let Some(strip) = primary_strip(window) else {
+    let embedded = target_point(window).and_then(|point| platform::embed(window, point));
+    let Some(strip) = embedded.or_else(|| primary_strip(window)) else {
         return;
     };
     let (w, h) = window_size(window);
     let (x, y) = place(strip, w, h, POSITION.load(Ordering::Relaxed));
     let current = window.outer_position().ok();
-    if current.map(|p| (p.x, p.y)) != Some((x, y)) {
+    if current.map(|p| (p.x, p.y)) == Some((x, y)) {
+        return;
+    }
+    if embedded.is_some() {
+        // Child windows are positioned in the taskbar's client coordinates.
+        platform::move_child(window, x - strip.x, y - strip.y);
+    } else {
         let _moved = window.set_position(PhysicalPosition::new(x, y));
     }
 }
@@ -274,9 +301,12 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Keep the meter above the taskbar (only re-raises when it is covered).
+/// Keep a free-floating (not embedded) meter above the taskbar. An embedded
+/// meter is part of the taskbar and needs nothing.
 fn raise(window: &tauri::WebviewWindow) {
-    platform::keep_above_taskbar(window);
+    if !platform::is_embedded() {
+        crate::floatbar::apply_always_on_top(window);
+    }
 }
 
 /// Lock or unlock the meter's position (settings toggle / context menu).
@@ -324,6 +354,8 @@ fn set_active(app: &AppHandle, active: bool) {
             platform::track_window(&window);
         }
         let _hooked = app.run_on_main_thread(platform::install_zorder_hook);
+        let _ = APP.set(app.clone());
+        platform::install_mouse_hook();
     } else {
         platform::forget_window();
     }
@@ -333,7 +365,15 @@ fn set_active(app: &AppHandle, active: bool) {
             while ACTIVE.load(Ordering::Acquire) {
                 tokio::time::sleep(GUARD_INTERVAL).await;
                 let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) else {
-                    break;
+                    // Destroyed with its host taskbar (Explorer restart):
+                    // recreate it once a taskbar is back.
+                    if ACTIVE.load(Ordering::Acquire) && platform::taskbar_exists() {
+                        platform::forget_window();
+                        if let Err(error) = show(&app) {
+                            tracing::warn!("taskbar meter: recreate failed: {error}");
+                        }
+                    }
+                    continue;
                 };
                 guard_tick(&window);
             }
@@ -343,6 +383,16 @@ fn set_active(app: &AppHandle, active: bool) {
 }
 
 fn guard_tick(window: &tauri::WebviewWindow) {
+    if !DRAGGING.load(Ordering::Acquire) {
+        redock(window);
+    }
+    if platform::is_embedded() {
+        // Part of the taskbar: shown, hidden and layered with it.
+        if HIDDEN_FOR_FULLSCREEN.swap(false, Ordering::AcqRel) {
+            platform::set_shown(window, true);
+        }
+        return;
+    }
     if platform::taskbar_is_covered(window) {
         if !HIDDEN_FOR_FULLSCREEN.swap(true, Ordering::AcqRel) {
             platform::set_shown(window, false);
@@ -352,9 +402,6 @@ fn guard_tick(window: &tauri::WebviewWindow) {
     if HIDDEN_FOR_FULLSCREEN.swap(false, Ordering::AcqRel) {
         crate::floatbar::apply_no_activate(window);
         platform::set_shown(window, true);
-    }
-    if !DRAGGING.load(Ordering::Acquire) {
-        redock(window);
     }
     raise(window);
 }
@@ -384,17 +431,22 @@ pub fn taskbar_meter_resize(app: AppHandle, width: f64, height: f64) -> Result<(
 /// release. Ignored while the position is locked.
 #[tauri::command]
 pub fn taskbar_meter_drag_start(app: AppHandle) -> Result<(), String> {
+    begin_drag(&app);
+    Ok(())
+}
+
+fn begin_drag(app: &AppHandle) {
     if LOCKED.load(Ordering::Acquire) {
-        return Ok(());
+        return;
     }
     let Some(window) = app.get_webview_window(TASKBAR_METER_LABEL) else {
-        return Ok(());
+        return;
     };
     let Some(origin) = platform::cursor_position() else {
-        return Ok(());
+        return;
     };
     if DRAGGING.swap(true, Ordering::AcqRel) {
-        return Ok(());
+        return;
     }
     std::thread::spawn(move || {
         let moved = drag_loop(&window, origin);
@@ -403,7 +455,29 @@ pub fn taskbar_meter_drag_start(app: AppHandle) -> Result<(), String> {
             persist_position();
         }
     });
-    Ok(())
+}
+
+/// App handle for the native mouse hook (set while the meter is active).
+static APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// Mouse hook: primary press on the embedded meter.
+fn hook_press() {
+    if let Some(app) = APP.get() {
+        begin_drag(app);
+    }
+}
+
+/// Mouse hook: secondary click on the embedded meter. Deferred to the UI
+/// thread so the hook callback returns immediately.
+fn hook_context_menu() {
+    if let Some(app) = APP.get() {
+        let handle = app.clone();
+        let _queued = app.run_on_main_thread(move || {
+            if let Err(error) = taskbar_meter_context_menu(handle) {
+                tracing::warn!("taskbar meter: context menu failed: {error}");
+            }
+        });
+    }
 }
 
 /// Follow the cursor while the primary button is held. Returns whether the
@@ -413,7 +487,7 @@ fn drag_loop(window: &tauri::WebviewWindow, origin: (i32, i32)) -> bool {
     let mut moved = false;
     while platform::primary_button_down() && !LOCKED.load(Ordering::Acquire) {
         std::thread::sleep(DRAG_POLL);
-        let (Some(cursor), Some(strip)) = (platform::cursor_position(), primary_strip(window))
+        let (Some(cursor), Some(strip)) = (platform::cursor_position(), current_strip(window))
         else {
             break;
         };
@@ -554,6 +628,15 @@ mod platform {
     /// HWND of the meter while it is shown (0 when not).
     static METER_HWND: AtomicIsize = AtomicIsize::new(0);
     static HOOKED: AtomicBool = AtomicBool::new(false);
+    /// The meter is a child window of a taskbar (see `embed`).
+    static EMBEDDED: AtomicBool = AtomicBool::new(false);
+
+    const GWL_STYLE: i32 = -16;
+    const WS_POPUP: isize = 0x8000_0000_u32 as i32 as isize;
+    const WS_CHILD: isize = 0x4000_0000;
+    const GW_CHILD: u32 = 5;
+    const HWND_TOP: isize = 0;
+    const SWP_NOZORDER: u32 = 0x0004;
 
     const EVENT_SYSTEM_FOREGROUND: u32 = 0x0003;
     const EVENT_OBJECT_REORDER: u32 = 0x8004;
@@ -651,6 +734,10 @@ mod platform {
         fn GetTopWindow(hwnd: isize) -> isize;
         fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
         fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+        fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
+        fn SetParent(child: isize, parent: isize) -> isize;
+        fn GetParent(hwnd: isize) -> isize;
+        fn MonitorFromPoint(point: Point, flags: u32) -> isize;
         fn IsWindowVisible(hwnd: isize) -> i32;
         fn GetForegroundWindow() -> isize;
         fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
@@ -689,6 +776,7 @@ mod platform {
 
     pub fn forget_window() {
         METER_HWND.store(0, Ordering::Release);
+        EMBEDDED.store(false, Ordering::Release);
     }
 
     fn wide(text: &str) -> Vec<u16> {
@@ -782,6 +870,115 @@ mod platform {
         }
     }
 
+    pub fn is_embedded() -> bool {
+        EMBEDDED.load(Ordering::Acquire)
+    }
+
+    pub fn taskbar_exists() -> bool {
+        let primary = wide("Shell_TrayWnd");
+        // SAFETY: NUL-terminated class name; lookup only.
+        unsafe { FindWindowExW(0, 0, primary.as_ptr(), std::ptr::null()) != 0 }
+    }
+
+    fn strip_of(hwnd: isize) -> Option<super::Strip> {
+        let mut rect = Rect::default();
+        // SAFETY: `rect` is a valid out-pointer.
+        if unsafe { GetWindowRect(hwnd, &mut rect) } == 0 {
+            return None;
+        }
+        let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
+        (width > 0 && height > 0).then_some(super::Strip {
+            x: rect.left,
+            y: rect.top,
+            width,
+            height,
+            horizontal: width >= height,
+        })
+    }
+
+    /// Embed the meter as a child window of the taskbar on the monitor at
+    /// `point`, so Windows draws it as part of the taskbar: it stays visible
+    /// while Start / search / flyouts lift the taskbar into a higher z-band
+    /// (no ordinary topmost window can follow it there), never flashes on
+    /// taskbar clicks, and disappears with the taskbar under fullscreen apps.
+    /// Returns the taskbar's screen rect, or None (not embedded) when that
+    /// monitor has no taskbar window.
+    pub fn embed(window: &tauri::WebviewWindow, point: (i32, i32)) -> Option<super::Strip> {
+        let meter = meter_hwnd(window)?;
+        let point = Point {
+            x: point.0,
+            y: point.1,
+        };
+        // SAFETY: window queries/updates on our own window and the taskbar.
+        unsafe {
+            let taskbar = taskbar_on(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST));
+            if taskbar == 0 {
+                if GetParent(meter) != 0 {
+                    SetParent(meter, 0);
+                    let style = GetWindowLongPtrW(meter, GWL_STYLE);
+                    SetWindowLongPtrW(meter, GWL_STYLE, (style & !WS_CHILD) | WS_POPUP);
+                }
+                EMBEDDED.store(false, Ordering::Release);
+                return None;
+            }
+            if GetParent(meter) != taskbar {
+                let style = GetWindowLongPtrW(meter, GWL_STYLE);
+                SetWindowLongPtrW(meter, GWL_STYLE, (style & !WS_POPUP) | WS_CHILD);
+                SetParent(meter, taskbar);
+                if GetParent(meter) != taskbar {
+                    SetWindowLongPtrW(meter, GWL_STYLE, style);
+                    EMBEDDED.store(false, Ordering::Release);
+                    return None;
+                }
+            }
+            // Above the taskbar's own content (its XAML island child).
+            if GetWindow(taskbar, GW_CHILD) != meter {
+                SetWindowPos(
+                    meter,
+                    HWND_TOP,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
+                );
+            }
+            EMBEDDED.store(true, Ordering::Release);
+            strip_of(taskbar)
+        }
+    }
+
+    /// Screen rect of the taskbar the meter is embedded in.
+    pub fn host_rect(window: &tauri::WebviewWindow) -> Option<super::Strip> {
+        if !is_embedded() {
+            return None;
+        }
+        // SAFETY: window query only.
+        let parent = unsafe { GetParent(meter_hwnd(window)?) };
+        if parent == 0 {
+            return None;
+        }
+        strip_of(parent)
+    }
+
+    /// Move the embedded meter to (x, y) in its taskbar's client coordinates.
+    pub fn move_child(window: &tauri::WebviewWindow, x: i32, y: i32) {
+        if let Some(meter) = meter_hwnd(window) {
+            // SAFETY: moving our own window.
+            unsafe {
+                SetWindowPos(
+                    meter,
+                    0,
+                    x,
+                    y,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+
     /// Show/hide without activating. Raw calls on purpose: the z-order hook
     /// hides with ShowWindow too, which tao does not track, so its own
     /// show() would be a no-op afterwards.
@@ -791,12 +988,6 @@ mod platform {
             unsafe {
                 ShowWindow(meter, if shown { SW_SHOWNOACTIVATE } else { SW_HIDE });
             }
-        }
-    }
-
-    pub fn keep_above_taskbar(window: &tauri::WebviewWindow) {
-        if let Some(meter) = meter_hwnd(window) {
-            raise_hwnd(meter);
         }
     }
 
@@ -813,7 +1004,7 @@ mod platform {
         _time: u32,
     ) {
         let meter = METER_HWND.load(Ordering::Acquire);
-        if meter == 0 {
+        if meter == 0 || EMBEDDED.load(Ordering::Acquire) {
             return;
         }
         if covered(meter) {
@@ -937,6 +1128,120 @@ mod platform {
         false
     }
 
+    static MOUSE_HOOKED: AtomicBool = AtomicBool::new(false);
+    /// Primary press on the meter swallowed by the hook, not yet released.
+    static HOOK_BUTTON_DOWN: AtomicBool = AtomicBool::new(false);
+    /// Secondary press on the meter swallowed by the hook.
+    static HOOK_RIGHT_DOWN: AtomicBool = AtomicBool::new(false);
+
+    const WH_MOUSE_LL: i32 = 14;
+    const WM_LBUTTONDOWN: usize = 0x0201;
+    const WM_LBUTTONUP: usize = 0x0202;
+    const WM_RBUTTONDOWN: usize = 0x0204;
+    const WM_RBUTTONUP: usize = 0x0205;
+
+    #[repr(C)]
+    struct MouseHookInfo {
+        pt: Point,
+        mouse_data: u32,
+        flags: u32,
+        time: u32,
+        extra: usize,
+    }
+
+    #[repr(C)]
+    struct Msg {
+        hwnd: isize,
+        message: u32,
+        wparam: usize,
+        lparam: isize,
+        time: u32,
+        pt: Point,
+        private: u32,
+    }
+
+    type MouseProc = unsafe extern "system" fn(i32, usize, isize) -> isize;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SetWindowsHookExW(id: i32, proc: MouseProc, module: isize, thread: u32) -> isize;
+        fn CallNextHookEx(hook: isize, code: i32, wparam: usize, lparam: isize) -> isize;
+        fn GetMessageW(msg: *mut Msg, hwnd: isize, min: u32, max: u32) -> i32;
+    }
+
+    fn over_meter(pt: &Point) -> bool {
+        let meter = METER_HWND.load(Ordering::Acquire);
+        if meter == 0 {
+            return false;
+        }
+        let mut rect = Rect::default();
+        // SAFETY: window queries on our own window with a valid out-pointer.
+        unsafe {
+            IsWindowVisible(meter) != 0
+                && GetWindowRect(meter, &mut rect) != 0
+                && pt.x >= rect.left
+                && pt.x < rect.right
+                && pt.y >= rect.top
+                && pt.y < rect.bottom
+        }
+    }
+
+    /// Embedded in the taskbar, the meter's webview never gets mouse input:
+    /// WebView2's input window is click-through (WS_EX_TRANSPARENT) and hit
+    /// testing falls through to the taskbar in another process. So presses
+    /// over the meter are handled here and kept from the taskbar.
+    unsafe extern "system" fn on_mouse(code: i32, wparam: usize, lparam: isize) -> isize {
+        if code >= 0 && EMBEDDED.load(Ordering::Acquire) {
+            // SAFETY: for WH_MOUSE_LL, lparam points to an MSLLHOOKSTRUCT.
+            let info = unsafe { &*(lparam as *const MouseHookInfo) };
+            match wparam {
+                WM_LBUTTONUP if HOOK_BUTTON_DOWN.swap(false, Ordering::AcqRel) => return 1,
+                WM_RBUTTONUP if HOOK_RIGHT_DOWN.swap(false, Ordering::AcqRel) => {
+                    super::hook_context_menu();
+                    return 1;
+                }
+                WM_LBUTTONDOWN if over_meter(&info.pt) => {
+                    HOOK_BUTTON_DOWN.store(true, Ordering::Release);
+                    super::hook_press();
+                    return 1;
+                }
+                WM_RBUTTONDOWN if over_meter(&info.pt) => {
+                    HOOK_RIGHT_DOWN.store(true, Ordering::Release);
+                    return 1;
+                }
+                _ => {}
+            }
+        }
+        // SAFETY: forwarding the event unchanged.
+        unsafe { CallNextHookEx(0, code, wparam, lparam) }
+    }
+
+    /// Install the low-level mouse hook once, on its own thread with its own
+    /// message loop, so a busy UI thread can never stall system-wide input.
+    pub fn install_mouse_hook() {
+        if MOUSE_HOOKED.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let spawned = std::thread::Builder::new()
+            .name("taskbar-meter-mouse".into())
+            .spawn(|| {
+                // SAFETY: the hook procedure has the LowLevelMouseProc
+                // signature; GetMessageW pumps this thread's queue (required
+                // for low-level hooks) with a valid MSG out-pointer.
+                unsafe {
+                    if SetWindowsHookExW(WH_MOUSE_LL, on_mouse, 0, 0) == 0 {
+                        tracing::warn!("taskbar meter: mouse hook failed");
+                        return;
+                    }
+                    let mut msg = std::mem::zeroed::<Msg>();
+                    while GetMessageW(&mut msg, 0, 0, 0) > 0 {}
+                }
+            });
+        if spawned.is_err() {
+            MOUSE_HOOKED.store(false, Ordering::Release);
+        }
+    }
+
     /// Cursor position in physical screen pixels.
     pub fn cursor_position() -> Option<(i32, i32)> {
         let mut point = Point::default();
@@ -946,6 +1251,11 @@ mod platform {
 
     /// Whether the primary mouse button is physically held right now.
     pub fn primary_button_down() -> bool {
+        if EMBEDDED.load(Ordering::Acquire) {
+            // The mouse hook swallowed the press, so the system (and
+            // GetAsyncKeyState) never saw it; the hook tracks the release.
+            return HOOK_BUTTON_DOWN.load(Ordering::Acquire);
+        }
         // SAFETY: stateless input queries.
         unsafe {
             // GetAsyncKeyState reads physical buttons; honor swapped buttons.
@@ -964,7 +1274,19 @@ mod platform {
     pub fn taskbar_is_covered(_window: &tauri::WebviewWindow) -> bool {
         false
     }
-    pub fn keep_above_taskbar(_window: &tauri::WebviewWindow) {}
+    pub fn is_embedded() -> bool {
+        false
+    }
+    pub fn taskbar_exists() -> bool {
+        true
+    }
+    pub fn embed(_window: &tauri::WebviewWindow, _point: (i32, i32)) -> Option<super::Strip> {
+        None
+    }
+    pub fn host_rect(_window: &tauri::WebviewWindow) -> Option<super::Strip> {
+        None
+    }
+    pub fn move_child(_window: &tauri::WebviewWindow, _x: i32, _y: i32) {}
     pub fn set_shown(window: &tauri::WebviewWindow, shown: bool) {
         let _changed = if shown { window.show() } else { window.hide() };
     }
@@ -977,6 +1299,7 @@ mod platform {
     pub fn track_window(_window: &tauri::WebviewWindow) {}
     pub fn forget_window() {}
     pub fn install_zorder_hook() {}
+    pub fn install_mouse_hook() {}
 }
 
 #[cfg(test)]
